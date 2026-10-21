@@ -1,5 +1,6 @@
 using System;
 using Gui;
+using Gui.Backend;
 
 // 雪线跳跃 · PLATFORMER —— 阶段一：项目骨架 + 最小可玩场景。
 //
@@ -14,17 +15,23 @@ using Gui;
 //   PLATFORMER_SMOKE=1          跑满 PLATFORMER_FRAMES 帧后自行退出
 //   PLATFORMER_FRAMES=<n>       冒烟帧数（默认 90）
 //   PLATFORMER_CAPTURE=<path>   指定帧把画布写成 .zpx 帧文件
+//   PLATFORMER_SAVE=<dir>       存档目录（测试脚本用临时目录）
 public class Program {
     Form form;
     App app;
+    GameShell shell;
     int frames = 0;
 
     // ---- 场景参数 ----
     const int GroundY = 560;
+    // 地面上的一个坑：掉进去 = 死亡，回到起点重来。
+    const int PitX = 480;
+    const int PitW = 120;
     int playerX = 220;
     int playerY = GroundY - 44;
     int playerV = -420;
     bool onGround = true;
+    bool inPit = false;
     int tick = 0;
 
     static void Main() {
@@ -37,25 +44,53 @@ public class Program {
         app = form.GetApp();
         app.UseSkin("dark");
         Canvas.SetBackend(1);
+        // 外壳：存档（最远距离/死亡数）+ 设置浮层。浮层是标准库控件，
+        // 盖在直绘画面之上——Esc 开关。
+        this.shell = new GameShell();
+        form.Add(this.shell.Overlay().Root());
         app.Show();
         app.RequestRedraw();
         while (true) {
             int got = app.PollOneEvent();
-            if (got < 0) { break; }
+            if (got < 0) {
+                this.Finish();
+                break;
+            }
+            // Esc 开关设置浮层（只有真有事件时才看键码，否则会拿上一帧的
+            // 残留值反复开关）。
+            if (got == 1 && app.window.EventKind() == 4
+                && app.window.EventKeyCode() == Keys.Escape()) {
+                this.shell.Overlay().Toggle();
+            }
+            this.shell.Overlay().Tick();
             int dt = 16;
             Tick(dt);
             app.BeginFrame();
             Render();
+            // 控件树叠在直绘之上：测量 → 排布 → 绘制。
+            form.MeasureTree(app);
+            form.Arrange(app.ShapeOffX(), app.ContentTop() + app.ShapeOffY(),
+                app.ClientWidth(), app.ClientHeight() - app.ContentTop());
+            form.RenderTree(app);
             app.RenderChrome("雪线跳跃 · PLATFORMER");
             frames = frames + 1;
             app.PresentFrame();
             if (IsSmoke() && frames >= SmokeFrames()) {
                 Console.WriteLine("PLATFORMER_SMOKE_OK frames=" + Convert.ToString(frames));
+                this.Finish();
                 break;
             }
             app.RequestRedraw();
             Window.SleepMs(16);
         }
+    }
+
+    // 收尾：存档落盘 + 打印读回值（测试脚本靠这行验证"跑两遍读得到"）。
+    void Finish() {
+        this.shell.Save();
+        Console.WriteLine("PLATFORMER_SAVE best=" + Convert.ToString(this.shell.Best())
+            + " deaths=" + Convert.ToString(this.shell.Deaths())
+            + " runs=" + Convert.ToString(this.shell.Runs()));
     }
 
     bool IsSmoke() {
@@ -71,28 +106,49 @@ public class Program {
     // ---- 逻辑：最小跳跃循环（位图阶段换成精灵 + 帧动画） ----
     void Tick(int dt) {
         tick = tick + dt;
-        int speed = 4;
+        // 难度档（1/2/3）决定重力、跑速与起跳高度——设置不是摆设。
+        int level = this.shell.Difficulty();
+        int gravity = 1800 + level * 300;   // 2100 / 2400 / 2700
+        int speed = 3 + level;              // 4 / 5 / 6
+        int jump = -540 + level * 60;       // -480 / -420 / -360
         playerX = playerX + speed;
-        if (playerX > 1180) { playerX = 120; }
-        if (onGround) {
-            playerV = playerV + 2400 * dt / 1000;
-            playerY = playerY + playerV * dt / 1000;
-            if (playerY >= GroundY - 44) {
-                playerY = GroundY - 44;
-                playerV = 0;
-                onGround = true;
-            } else {
-                onGround = false;
-            }
-        } else {
-            playerV = playerV + 2400 * dt / 1000;
-            playerY = playerY + playerV * dt / 1000;
-            if (playerY >= GroundY - 44) {
-                playerY = GroundY - 44;
-                playerV = 0;
-                onGround = true;
-            }
+        if (playerX > 1180) {
+            // 冲出关卡右边界：算一次死亡，回到起点。
+            this.shell.RecordDeath();
+            playerX = 120;
+            playerY = GroundY - 44;
+            playerV = 0;
+            onGround = true;
         }
+        if (this.shell.AutoJump() && onGround) {
+            // 自动跳跃：落地即起跳，一路连蹦。
+            playerV = jump;
+            onGround = false;
+        }
+        playerV = playerV + gravity * dt / 1000;
+        playerY = playerY + playerV * dt / 1000;
+        bool overPit = playerX >= PitX && playerX < PitX + PitW;
+        if (overPit && onGround) {
+            // 踏空：掉进坑里（落地判定不再生效，一路往下掉）。
+            inPit = true;
+            onGround = false;
+        }
+        if (!inPit && playerY >= GroundY - 44) {
+            playerY = GroundY - 44;
+            playerV = 0;
+            onGround = true;
+        }
+        if (playerY > 700) {
+            // 掉出坑底：算一次死亡，回到起点。
+            this.shell.RecordDeath();
+            playerX = 120;
+            playerY = GroundY - 44;
+            playerV = 0;
+            onGround = true;
+            inPit = false;
+        }
+        // 跑到哪了：最远距离进存档。
+        this.shell.RecordDistance(playerX);
     }
 
     // ---- 渲染：几何占位（雪原 + 平台 + 跳跃方块） ----
@@ -103,14 +159,18 @@ public class Program {
         c.FillVGrad(0, 0, w, h, 0xFF2B4C7E, 0xFF9CC4E8);
         // 远山
         c.FillRect(0, GroundY - 120, w, 120, 0xFF3B5F8C);
-        // 雪原地面
-        c.FillRect(0, GroundY, w, h - GroundY, 0xFFF2F6FA);
-        c.FillRect(0, GroundY, w, 4, 0xFFCBD9E8);
+        // 雪原地面（中间留一个坑）
+        c.FillRect(0, GroundY, PitX, h - GroundY, 0xFFF2F6FA);
+        c.FillRect(PitX + PitW, GroundY, w - PitX - PitW, h - GroundY, 0xFFF2F6FA);
+        c.FillRect(0, GroundY, PitX, 4, 0xFFCBD9E8);
+        c.FillRect(PitX + PitW, GroundY, w - PitX - PitW, 4, 0xFFCBD9E8);
+        // 坑（暗色）
+        c.FillRect(PitX, GroundY, PitW, h - GroundY, 0xFF16233A);
         // 平台
-        c.FillRect(420, GroundY - 110, 150, 16, 0xFF8B6B4A);
+        c.FillRect(300, GroundY - 110, 150, 16, 0xFF8B6B4A);
         c.FillRect(760, GroundY - 190, 130, 16, 0xFF8B6B4A);
         // 雪堆
-        c.FillCircle(600, GroundY - 8, 22, 0xFFE6EEF6);
+        c.FillCircle(700, GroundY - 8, 22, 0xFFE6EEF6);
         // 玩家方块（位图阶段替换为雪地角色 sprite）
         c.FillRect(playerX, playerY, 44, 44, 0xFF2E7D32);
         c.DrawRect(playerX, playerY, 44, 44, 0xFF16351A, 3);
@@ -120,6 +180,11 @@ public class Program {
         c.DrawText(16, 44, "x=" + Convert.ToString(playerX) + "  y=" + Convert.ToString(playerY)
                    + "  v=" + Convert.ToString(playerV) + "  frames=" + Convert.ToString(frames),
                    0xFFE8F0FA, 14);
+        c.DrawText(16, 66, "难度 " + Convert.ToString(this.shell.Difficulty())
+                   + "   死亡 " + Convert.ToString(this.shell.Deaths())
+                   + "   最远 " + Convert.ToString(this.shell.Best()),
+                   0xFFE8F0FA, 14);
+        c.DrawText(16, h - 50, "Esc 打开设置", 0xC09FB0C6, 14);
         c.DrawText(16, h - 26, "TODO 位图：tux 角色帧 / 雪地 tile / 冰面 tile / 视差背景三层",
                    0xC0E8F0FA, 14);
     }

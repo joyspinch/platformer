@@ -1,0 +1,98 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Json;
+using Game.Foundation;
+using Game.Foundation.Gui;
+
+// 雪线跳跃 · PLATFORMER 的外壳：存档（最远到达距离/累计死亡数）+ 设置
+// （难度/自动跳跃）+ 设置浮层。
+//
+// 存档基座（原子写 + 备份回退 + 版本号）与设置逻辑层（档位计算 + 校验 +
+// 落盘）都在公共包 Game.Foundation 里；这里只留"这个游戏存什么、设置有哪
+// 几项"——换个游戏换的正是这两行。
+public class GameShell {
+    GameSaveStore store;
+    GameSettings settings;
+    SettingsModel model;
+    SettingsOverlay overlay;
+    int best;     // 最远到达距离
+    int deaths;   // 累计死亡数
+    int runs;     // 局数（每启动一次 +1）
+
+    public GameShell() {
+        string dir = GameShell.SaveDir();
+        Directory.CreateDirectory(dir);
+        this.store = new GameSaveStore(dir, "platformer", 1);
+        this.settings = new GameSettings().At(dir + "/settings.json");
+        // 难度：重力、跑速、起跳高度都跟着变（1 轻松 / 2 标准 / 3 硬核）。
+        this.settings.AddIntChoice("difficulty", "难度", 2,
+            new List<int> { 1, 2, 3 });
+        // 自动跳跃：开启后落地即起跳，一路连蹦。
+        this.settings.AddBool("autojump", "自动跳跃", false);
+        this.settings.Load();
+        this.model = new SettingsModel(this.settings);
+        this.overlay = new SettingsOverlay(this.model);
+        this.overlay.SetTitle("设置");
+        this.Load();
+    }
+
+    // 存档目录：%LOCALAPPDATA%/Platformer（可用 PLATFORMER_SAVE 环境变量
+    // 覆盖，测试脚本靠它把存档落在临时目录里，不污染玩家机器）。
+    static string SaveDir() {
+        string overridden = Environment.GetEnvironmentVariable("PLATFORMER_SAVE");
+        if (overridden != "") { return overridden; }
+        string basePath = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+        if (basePath == "") { basePath = Directory.GetCurrentDirectory(); }
+        return basePath + "/Platformer";
+    }
+
+    public SettingsOverlay Overlay() { return this.overlay; }
+    public int Best() { return this.best; }
+    public int Deaths() { return this.deaths; }
+    public int Runs() { return this.runs; }
+
+    // 当前难度档（1/2/3）——游戏逻辑读它调物理参数。
+    public int Difficulty() {
+        if (this.settings == null) { return 2; }
+        return this.settings.GetInt("difficulty");
+    }
+
+    // 是否自动跳跃。
+    public bool AutoJump() {
+        if (this.settings == null) { return false; }
+        return this.settings.GetBool("autojump");
+    }
+
+    // 读档：没有存档就用默认值，不报错。
+    public void Load() {
+        JsonValue data = this.store.Load(0);
+        if (data == null) {
+            this.best = 0; this.deaths = 0; this.runs = 0;
+            return;
+        }
+        this.best = data.Int("best", 0);
+        this.deaths = data.Int("deaths", 0);
+        this.runs = data.Int("runs", 0);
+    }
+
+    // 跑到更远的地方：最远距离只增不减。
+    public void RecordDistance(int x) {
+        if (x > this.best) { this.best = x; }
+    }
+
+    // 掉进坑里：死亡数 +1。
+    public void RecordDeath() {
+        this.deaths = this.deaths + 1;
+    }
+
+    // 存档：局数 +1 后落盘。
+    public void Save() {
+        this.runs = this.runs + 1;
+        JsonValue data = JsonValue.NewObject();
+        data.PutInt("best", this.best);
+        data.PutInt("deaths", this.deaths);
+        data.PutInt("runs", this.runs);
+        this.store.Save(0, data);
+    }
+}
