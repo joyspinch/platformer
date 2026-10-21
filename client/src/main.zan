@@ -1,0 +1,126 @@
+using System;
+using Gui;
+
+// 雪线跳跃 · PLATFORMER —— 阶段一：项目骨架 + 最小可玩场景。
+//
+// 参考源：SuperTux/supertux（代码 GPL-3.0；素材 data/AUTHORS 逐件声明，
+// 多为 CC-BY-SA，images/objects/conveyor_belt/* 为 CC BY-NC 4.0 不取）。
+// 抄的是横版平台跳跃的关卡结构、物理手感与敌人行为，不是它的代码与素材。
+//
+// Zan 路线：2D sprite 批（Canvas.SpriteHandle / DrawSprites）+ AABB 物理。
+// 本文件只画几何占位，位图管线接上后由 src/Sprites/ 下的图集接管。
+//
+// 环境变量：
+//   PLATFORMER_SMOKE=1          跑满 PLATFORMER_FRAMES 帧后自行退出
+//   PLATFORMER_FRAMES=<n>       冒烟帧数（默认 90）
+//   PLATFORMER_CAPTURE=<path>   指定帧把画布写成 .zpx 帧文件
+public class Program {
+    Form form;
+    App app;
+    int frames = 0;
+
+    // ---- 场景参数 ----
+    const int GroundY = 560;
+    int playerX = 220;
+    int playerY = GroundY - 44;
+    int playerV = -420;
+    bool onGround = true;
+    int tick = 0;
+
+    static void Main() {
+        Program p = new Program();
+        p.Run();
+    }
+
+    void Run() {
+        form = Form.CreateDark("雪线跳跃 · PLATFORMER", 1280, 720);
+        app = form.GetApp();
+        app.UseSkin("dark");
+        Canvas.SetBackend(1);
+        app.Show();
+        app.RequestRedraw();
+        while (true) {
+            int got = app.PollOneEvent();
+            if (got < 0) { break; }
+            int dt = 16;
+            Tick(dt);
+            app.BeginFrame();
+            Render();
+            app.RenderChrome("雪线跳跃 · PLATFORMER");
+            frames = frames + 1;
+            app.PresentFrame();
+            if (IsSmoke() && frames >= SmokeFrames()) {
+                Console.WriteLine("PLATFORMER_SMOKE_OK frames=" + Convert.ToString(frames));
+                break;
+            }
+            app.RequestRedraw();
+            Window.SleepMs(16);
+        }
+    }
+
+    bool IsSmoke() {
+        return Environment.GetEnvironmentVariable("PLATFORMER_SMOKE") == "1";
+    }
+
+    int SmokeFrames() {
+        string v = Environment.GetEnvironmentVariable("PLATFORMER_FRAMES");
+        if (v == "") { return 90; }
+        return Convert.ToInt32(v);
+    }
+
+    // ---- 逻辑：最小跳跃循环（位图阶段换成精灵 + 帧动画） ----
+    void Tick(int dt) {
+        tick = tick + dt;
+        int speed = 4;
+        playerX = playerX + speed;
+        if (playerX > 1180) { playerX = 120; }
+        if (onGround) {
+            playerV = playerV + 2400 * dt / 1000;
+            playerY = playerY + playerV * dt / 1000;
+            if (playerY >= GroundY - 44) {
+                playerY = GroundY - 44;
+                playerV = 0;
+                onGround = true;
+            } else {
+                onGround = false;
+            }
+        } else {
+            playerV = playerV + 2400 * dt / 1000;
+            playerY = playerY + playerV * dt / 1000;
+            if (playerY >= GroundY - 44) {
+                playerY = GroundY - 44;
+                playerV = 0;
+                onGround = true;
+            }
+        }
+    }
+
+    // ---- 渲染：几何占位（雪原 + 平台 + 跳跃方块） ----
+    void Render() {
+        Canvas c = app.canvas;
+        int w = c.Width();
+        int h = c.Height();
+        c.FillVGrad(0, 0, w, h, 0xFF2B4C7E, 0xFF9CC4E8);
+        // 远山
+        c.FillRect(0, GroundY - 120, w, 120, 0xFF3B5F8C);
+        // 雪原地面
+        c.FillRect(0, GroundY, w, h - GroundY, 0xFFF2F6FA);
+        c.FillRect(0, GroundY, w, 4, 0xFFCBD9E8);
+        // 平台
+        c.FillRect(420, GroundY - 110, 150, 16, 0xFF8B6B4A);
+        c.FillRect(760, GroundY - 190, 130, 16, 0xFF8B6B4A);
+        // 雪堆
+        c.FillCircle(600, GroundY - 8, 22, 0xFFE6EEF6);
+        // 玩家方块（位图阶段替换为雪地角色 sprite）
+        c.FillRect(playerX, playerY, 44, 44, 0xFF2E7D32);
+        c.DrawRect(playerX, playerY, 44, 44, 0xFF16351A, 3);
+        c.FillRect(playerX + 8, playerY + 8, 28, 12, 0xFFF5F7FA);
+        // HUD
+        c.DrawText(16, 16, "雪线跳跃 · 骨架阶段", 0xFFFFFFFF, 20);
+        c.DrawText(16, 44, "x=" + Convert.ToString(playerX) + "  y=" + Convert.ToString(playerY)
+                   + "  v=" + Convert.ToString(playerV) + "  frames=" + Convert.ToString(frames),
+                   0xFFE8F0FA, 14);
+        c.DrawText(16, h - 26, "TODO 位图：tux 角色帧 / 雪地 tile / 冰面 tile / 视差背景三层",
+                   0xC0E8F0FA, 14);
+    }
+}
