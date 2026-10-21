@@ -1,0 +1,128 @@
+/* 跃迁山谷 · PLATFORMER 皮肤包（山谷黄昏：暖橙 / 苔绿 / 石板灰）。
+ *
+ * 位置：client/assets/skins/platformer/skin.css
+ *       构建时拷到 build/platformer/skins/platformer/（exe 同级——
+ *       Gui.Styling.Skin.Roots 找的是 exe/skins 与 exe/assets/skins）。
+ * 应用：host.App().UseSkin("platformer")，必须在默认皮肤之后调用，
+ *       否则会被默认皮肤盖回去。
+ *
+ * 令牌名照 packages/Zan.Gui/src/Gui/skins/base.css 的清单抄，不自造：
+ *   颜色 = #AARRGGBB（Gui 主题色同一种打包方式）；
+ *   长度/圆角 = 十进制数（逻辑像素）。
+ * 注意两组圆角令牌的区别：
+ *   --radius-*        是 CSS 变量，供本皮肤自己的规则消费；
+ *   --border-radius-* 才会进 Theme（TokenName 映射到 borderRadiusSmall…），
+ *                      base.css 与控件代码默认值都跟它走。两者都写才不出错。
+ */
+
+:root {
+  --name: "跃迁山谷";
+  --order: 20;
+  --base: dark;
+  --dark: 1;
+
+  /* --- 主色：暖橙金 --- */
+  --primary: #FFE0913C;
+  --primary-hover: #FFF0A855;
+  --primary-pressed: #FFC87B2C;
+
+  /* --- 角色色 --- */
+  --info: #FF6FA8C4;
+  --success: #FF8FCB7A;
+  --warning: #FFD9A441;
+  --error: #FFC4553F;
+
+  /* --- 文字：米白 / 石板蓝白 --- */
+  --text-primary: #FFF2E6D2;
+  --text-secondary: #FFC8D8E8;
+  --text-tertiary: #FF9AA6B4;
+  --text-disabled: #FF5D6674;
+  --text-inverse: #FF1A1208;
+
+  /* --- 表面：石板灰三层 --- */
+  --bg-primary: #FF1A1E26;
+  --bg-secondary: #FF232833;
+  --bg-tertiary: #FF2E3440;
+  --bg-hover: #FF343B49;
+  --bg-active: #FF272D38;
+  --bg-disabled: #FF232833;
+
+  /* --- 描边 --- */
+  --border-primary: #FF4A4438;
+  --border-secondary: #FF3A362E;
+  --border-hover: #FFD89A3C;
+  --border-focus: #FFE0A050;
+  --divider: #FF3A362E;
+
+  /* --- 浮层与投影 --- */
+  --shadow-color: #99000000;
+  --overlay: #B3000000;
+  --tooltip-bg: #FF232833;
+  --tooltip-border: #FF4A4438;
+  --tooltip-text: #FFF2E6D2;
+  --scrollbar: #FF3A362E;
+  --scrollbar-hover: #FF4A4438;
+
+  /* --- 圆角：CSS 变量 + 进 Theme 的那组 --- */
+  --radius-small: 6;
+  --radius-medium: 8;
+  --radius-large: 12;
+  --border-radius-small: 6;
+  --border-radius-medium: 8;
+  --border-radius-large: 12;
+
+  /* --- 字号：标题更醒目，正文保持 14 --- */
+  --font-size-medium: 14;
+  --font-size-large: 16;
+}
+
+/* ---- 按钮 ------------------------------------------------------------
+ * 标准库控件（设置浮层里的档位按钮 / 关闭按钮）吃这套规则。
+ * 常态 = 石板灰面 + 暖石板描边；悬停 = 提亮 + 暖橙描边；按下 = 压暗。
+ * 主按钮（当前选中的档位）= 暖橙实心 + 深色字。 */
+button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1 var(--border-primary);
+  border-radius: var(--radius-small);
+}
+button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+button:active {
+  background: var(--bg-active);
+  border-color: var(--border-focus);
+}
+button.primary {
+  background: var(--primary);
+  color: var(--text-inverse);
+  border: 0 var(--primary);
+  border-radius: var(--radius-small);
+}
+button.primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+button.primary:active {
+  background: var(--primary-pressed);
+  border-color: var(--primary-pressed);
+}
+
+/* ---- 文字 ------------------------------------------------------------ */
+label {
+  color: var(--text-primary);
+  font-size: var(--font-size-medium);
+}
+
+/* ---- 设置浮层的内容盒（class = card）--------------------------------
+ * 底色不再是系统默认黑卡：石板灰面板 + 暖石板描边 + 圆角 + 投影。 */
+panel.card {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 2 var(--border-primary);
+  border-radius: var(--radius-large);
+  padding: var(--padding-large);
+  box-shadow: 0 6 18 var(--shadow-color);
+}

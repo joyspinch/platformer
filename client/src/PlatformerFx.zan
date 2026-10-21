@@ -1,0 +1,79 @@
+using System;
+using System.Collections.Generic;
+using Game.Kit;
+using Gui;
+
+// 画面特效：起跳 / 落地的尘土粒子。
+//
+// 纯表现层，不参与玩法判定（断言用例不碰它）：逻辑层只在事件发生的那一刻
+// 播一把粒子，剩下的生命周期自己管。粒子坐标是世界坐标，绘制时减去相机。
+public class PlatformerFx {
+    // 一粒尘土。
+    public class PlatformerDust {
+        public float x;
+        public float y;
+        public float vx;
+        public float vy;
+        public float life;      // 剩余秒
+        public float maxLife;   // 总寿命（算淡出用）
+        public float size;
+        public int color;
+    }
+
+    public List<PlatformerDust> dust;
+    Rng rng;
+
+    public PlatformerFx() {
+        this.dust = new List<PlatformerDust>();
+        this.rng = Rng.Seed(20261022L);
+    }
+
+    // 播一把尘土：从 (x,y) 向两侧与上方散开。
+    // power 是力度倍率（落地 1.0 / 起跳 0.6）。
+    public void SpawnDust(float x, float y, int count, int color, float power) {
+        for (int i = 0; i < count; i = i + 1) {
+            PlatformerDust d = new PlatformerDust();
+            d.x = x + (float)this.rng.Range(-8, 9);
+            d.y = y - (float)this.rng.Range(0, 4);
+            d.vx = (float)this.rng.Range(-60, 61) * power;
+            d.vy = -(float)this.rng.Range(10, 70) * power;
+            d.maxLife = 0.32f + (float)this.rng.Range(0, 25) / 100.0f;
+            d.life = d.maxLife;
+            d.size = 1.4f + (float)this.rng.Range(0, 30) / 10.0f;
+            d.color = color;
+            this.dust.Add(d);
+        }
+    }
+
+    // 清空（重开关卡 / 回菜单时调用）。
+    public void Clear() { this.dust.Clear(); }
+
+    // 推进粒子：重力 + 横向阻尼，寿命到点就回收。
+    public void Update(float dt) {
+        for (int i = this.dust.Count - 1; i >= 0; i = i - 1) {
+            PlatformerDust d = this.dust[i];
+            d.life = d.life - dt;
+            if (d.life <= 0.0f) {
+                this.dust.RemoveAt(i);
+                continue;
+            }
+            d.vy = d.vy + 420.0f * dt;
+            d.vx = d.vx * 0.94f;
+            d.x = d.x + d.vx * dt;
+            d.y = d.y + d.vy * dt;
+        }
+    }
+
+    // 画粒子（世界坐标 → 屏幕坐标：减去相机横移）。
+    public void Draw(Canvas c, int cam) {
+        for (int i = 0; i < this.dust.Count; i = i + 1) {
+            PlatformerDust d = this.dust[i];
+            float k = d.life / d.maxLife;
+            int a = (int)(k * 150.0f);
+            if (a <= 0) { continue; }
+            int col = (a << 24) | (d.color & 0x00FFFFFF);
+            PlatformerPaint.FillCircle(c, (int)d.x - cam, (int)d.y,
+                (int)d.size, col);
+        }
+    }
+}

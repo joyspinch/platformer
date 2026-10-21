@@ -1,0 +1,23 @@
+# UiDriver 脚本：截「角色朝右」的画面。
+#
+# 用法（仓库根 platformer/ 下）：
+#   $out = 'build/platformer'
+#   $env:ZAN_UI_OUT = "$out/uidrv"
+#   $env:ZAN_UI_SCRIPT = 'client/tools/shot_face_right.script'
+#   python D:/project/zan-lang/scripts/shot_window.py `
+#     "$out/Platformer.exe" "$out/ui_face_right.png" 4.2 $out
+#
+# 脚本按 UiDriver 语法逐行注入合成输入：
+#   wait <ms>   等待；click <x> <y>  合成一次左键点击；keydown/keyup <键码>  合成按键。
+# 键码是 Windows 虚拟键码：A=65、D=68、Esc=27。
+#
+# 注意：click 的坐标是**客户区像素**。窗口带标题栏时客户区从标题栏下方开始，
+# 所以「开始游戏」按钮（舞台坐标 550,390 起）要往下挪一个标题栏高度
+# （本机 48px → 客户端 640,462）。换机器改了标题栏高度就同步改这个 y。
+wait 300
+click 640 462
+wait 400
+keydown 68
+wait 1200
+keyup 68
+wait 1500

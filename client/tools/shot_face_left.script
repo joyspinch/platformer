@@ -1,0 +1,16 @@
+# UiDriver 脚本：截「角色朝左」的画面。
+#
+# 用法见 client/tools/shot_face_right.script（同一套约定）。
+# 流程：点「开始游戏」→ 先按住 D 走到画面中间 → 松开 → 按住 A 往左走一小段 →
+# 松开（松手后朝向保持向左，角色停在画面中间，便于与朝右那张对照）。
+wait 300
+click 640 462
+wait 400
+keydown 68
+wait 1200
+keyup 68
+wait 150
+keydown 65
+wait 250
+keyup 65
+wait 1500

@@ -468,11 +468,82 @@ public class PlatformerTest {
         }
     }
 
+    // ---- 朝向 → 取帧 ---------------------------------------------------
+
+    static void TestFacing() {
+        // 取帧索引规则（纯函数）：0 = 朝右（原图），1 = 朝左（水平镜像）。
+        Eq(PlatformerFacing.PlayerFrame(true), PlatformerFacing.FrameRight,
+            "玩家朝右取第 0 帧");
+        Eq(PlatformerFacing.PlayerFrame(false), PlatformerFacing.FrameLeft,
+            "玩家朝左取第 1 帧");
+        Eq(PlatformerFacing.DroneFrame(true), PlatformerFacing.FrameRight,
+            "巡逻兵朝右取第 0 帧");
+        Eq(PlatformerFacing.DroneFrame(false), PlatformerFacing.FrameLeft,
+            "巡逻兵朝左取第 1 帧");
+        // 左右必须取到不同的帧——否则"朝向"等于没做。
+        Ok(PlatformerFacing.PlayerFrame(true) != PlatformerFacing.PlayerFrame(false),
+            "玩家左右取到不同的帧");
+        Ok(PlatformerFacing.DroneFrame(true) != PlatformerFacing.DroneFrame(false),
+            "巡逻兵左右取到不同的帧");
+        // 帧索引落在精灵表的帧数范围内。
+        Ok(PlatformerFacing.PlayerFrame(true) >= 0
+            && PlatformerFacing.PlayerFrame(true) < PlatformerFacing.Frames,
+            "玩家帧索引在范围内");
+        Ok(PlatformerFacing.DroneFrame(false) >= 0
+            && PlatformerFacing.DroneFrame(false) < PlatformerFacing.Frames,
+            "巡逻兵帧索引在范围内");
+        // 源矩形左边界随帧索引平移一个帧宽（源图像素，不是显示像素）。
+        Eq(PlatformerFacing.PlayerSrcX(false), PlatformerFacing.PlayerFrameW,
+            "玩家左帧源矩形右移一个帧宽");
+        Eq(PlatformerFacing.PlayerSrcX(true), 0, "玩家右帧源矩形从 0 开始");
+        Eq(PlatformerFacing.DroneSrcX(false), PlatformerFacing.DroneFrameW,
+            "巡逻兵左帧源矩形右移一个帧宽");
+        // 精灵表口径：两帧横排成一张（帧宽 x 2）。
+        Eq(PlatformerFacing.PlayerFrameW * PlatformerFacing.Frames, 144,
+            "玩家精灵表宽 144");
+        Eq(PlatformerFacing.PlayerFrameH, 100, "玩家精灵表高 100");
+        Eq(PlatformerFacing.DroneFrameW * PlatformerFacing.Frames, 176,
+            "巡逻兵精灵表宽 176");
+        Eq(PlatformerFacing.DroneFrameH, 76, "巡逻兵精灵表高 76");
+
+        // 往左走：facing 变 false，取帧索引随之改变。
+        PlatformerGame g = NewGame();
+        PlatformerPlayer p = g.player;
+        g.keyRight = true;
+        g.keyJump = false;
+        g.Update(0.016f);
+        Ok(p.facingRight, "按住右键时面朝右");
+        int rightFrame = PlatformerFacing.PlayerFrame(p.facingRight);
+        g.keyRight = false;
+        g.keyLeft = true;
+        g.Update(0.016f);
+        Ok(!p.facingRight, "按住左键后面朝左");
+        int leftFrame = PlatformerFacing.PlayerFrame(p.facingRight);
+        Ok(leftFrame != rightFrame, "向左移动后取帧索引变化");
+        Eq(leftFrame, PlatformerFacing.FrameLeft, "向左移动后取第 1 帧");
+
+        // 巡逻兵走到边界折返：朝向翻转，取帧索引随之变化。
+        PlatformerGame g2 = NewGame();
+        PlatformerEnemy e = g2.enemies[0];
+        int droneFrame0 = PlatformerFacing.DroneFrame(e.facingRight);
+        int droneFrame1 = droneFrame0;
+        bool flipped = false;
+        for (int i = 0; i < 3000; i = i + 1) {
+            g2.keyLeft = false; g2.keyRight = false; g2.keyJump = false;
+            g2.Update(0.016f);
+            int f = PlatformerFacing.DroneFrame(e.facingRight);
+            if (f != droneFrame0) { flipped = true; droneFrame1 = f; break; }
+        }
+        Ok(flipped, "巡逻兵折返时朝向翻转");
+        Ok(droneFrame1 != droneFrame0, "巡逻兵折返后取帧索引变化");
+    }
+
     static void Main() {
         TestLevels();
         TestGravityAndLanding();
         TestJump();
         TestMovement();
+        TestFacing();
         TestEnemy();
         TestShards();
         TestDeath();

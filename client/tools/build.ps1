@@ -50,5 +50,16 @@ $zargs += @('-o', $exe)
 & $Compiler @zargs
 if ($LASTEXITCODE -ne 0) { throw "zanc failed ($LASTEXITCODE)" }
 $assets = Join-Path $project 'assets'
+# 先清掉上一版残留（素材改过名时，老文件留着只会误导），再整份拷过去。
+$outAssets = Join-Path $Output 'assets'
+if (Test-Path $outAssets) { Remove-Item $outAssets -Recurse -Force }
 if (Test-Path $assets) { Copy-Item $assets $Output -Recurse -Force }
+# 皮肤包：必须与 exe 同级（Gui.Styling.Skin.Roots 找 exe/skins/<name>/skin.css），
+# 放在 assets/ 下虽然也能被 exe/assets/skins 命中，但规范口径是 exe 同级。
+$skin = Join-Path $assets 'skins/platformer'
+if (Test-Path $skin) {
+    $skinOut = Join-Path $Output 'skins/platformer'
+    New-Item -ItemType Directory -Force $skinOut | Out-Null
+    Copy-Item (Join-Path $skin '*') $skinOut -Force
+}
 Write-Host "Built $exe"

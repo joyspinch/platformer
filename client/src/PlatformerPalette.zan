@@ -1,0 +1,48 @@
+using System;
+
+// 跃迁山谷 · PLATFORMER 的色板：山谷黄昏（暖橙 / 苔绿 / 石板灰）。
+//
+// 全部画面颜色只从这里取：同一个语义（主强调 / 次文字 / 面板底 / 危险色…）
+// 在任何文件里都只有一个出处，换配色只改这一处。
+//
+// 颜色是 0xAARRGGBB（与 Gui 的主题色同一种打包方式）。
+public class PlatformerPalette {
+    // ---- 背景与地形 ----
+    public const int Sky = 0xFF10182C;       // 天色底（视差层之间）
+    public const int Abyss = 0xFF090E1B;     // 地面线以下的深渊
+    public const int RockDark = 0xFF171D28;  // 地形块底
+    public const int RockEdge = 0xFF39445A;  // 地形块顶沿
+
+    // ---- 主题色 ----
+    public const int Amber = 0xFFF2D98A;      // 主强调：暖橙金（标题 / 分数）
+    public const int AmberDeep = 0xFFD89A3C;  // 深一档暖橙（描边）
+    public const int AmberGlow = 0xFFFFC46B;  // 亮暖橙（发光 / 尾焰）
+    public const int Moss = 0xFF9FE0C0;       // 苔绿（晶片 / 成功）
+    public const int MossDeep = 0xFF6FAE72;   // 深苔绿
+    public const int CrystalGlow = 0x3380F0FF; // 晶片外圈光晕
+
+    // ---- 文字 ----
+    public const int Parchment = 0xFFF2E6D2;  // 主文字（米白）
+    public const int Slate = 0xFFC8D8E8;      // 次文字（石板蓝白）
+    public const int Mist = 0xFF8FA6B4;       // 弱文字（提示条）
+    public const int Danger = 0xFFE2554A;     // 危险（生命 / 受击）
+    public const int DangerSoft = 0xFFFF9E8C;
+    public const int TextInk = 0xFF241A10;    // 暖色底板上的深色字
+
+    // ---- 面板与投影 ----
+    public const int PanelFill = 0xE0121A2C;  // 没有美术底板时的兜底面板底
+    public const int PanelEdge = 0xFF6C7C9A;
+    public const int Shadow = 0x66000000;     // 落地投影
+    public const int Scrim = 0xC0080C16;      // 结算画面的压暗层
+
+    // ---- 按钮（美术底板缺失时的兜底纯色）----
+    public const int ButtonFace = 0xFF27364E;
+    public const int ButtonFaceHover = 0xFF32455F;
+    public const int ButtonEdge = 0xFF4A5D7C;
+    public const int ButtonText = 0xFFEAF2F8;
+    public const int ButtonPrimary = 0xFF2F7FB8;
+    public const int ButtonPrimaryHover = 0xFF3E9AD6;
+
+    // ---- 尘土粒子 ----
+    public const int Dust = 0xFFD9C39A;
+}

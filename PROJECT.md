@@ -31,7 +31,16 @@
 
 - 三层视差背景（远山 0.10 / 松林 0.20 / 灌木 0.30），用 `Canvas.BlitImage` **裁源矩形**取景，
   随相机按不同速度滚动（不平移两张拼接，所以没有竖缝）。
-- 角色、巡逻兵、晶片、旗子、地形砖块全部是位图；HUD 面板是位图底板 + 几何血条。
+- 角色、巡逻兵、晶片、旗子、地形砖块全部是位图；HUD 面板、底部提示条与结算面板是
+  **九宫格美术底板**（`ui_board.png`，`PlatformerPaint.NineSlice` 自己切 9 块）；
+  画布按钮是九宫格按钮底板（三态）。
+- **朝向**：引擎运行时不能翻转贴图，所以玩家与巡逻兵各用一张**两帧精灵表**
+  （原图朝右 / 水平镜像朝左），按 `facingRight` 取帧；规则见 `client/ASSETS.md`。
+- **主体细节**：落地投影（软椭圆）、巡逻兵尾焰（朝向指示）、角色背后的柔光、
+  起跳与落地的尘土粒子。
+- **UI 皮肤包**：`client/assets/skins/platformer/skin.css`（山谷黄昏：暖橙 / 苔绿 / 石板灰），
+  构建拷到 `build/platformer/skins/platformer/`，启动时 `host.App().UseSkin("platformer")` 应用。
+- 颜色统一在 `client/src/PlatformerPalette.zan`（同一语义只有一个出处）。
 - 贴图走 `Assets.Find`（磁盘优先）→ 内嵌表兜底 → 纯色绘制兜底，缺资源也不崩。
 
 ## 音效
@@ -58,10 +67,10 @@
 
     platformer/
       client/
-        src/      玩法与渲染源码（8 个 .zan）
-        assets/   位图 + assets/sfx/*.wav
+        src/      玩法与渲染源码（11 个 .zan）
+        assets/   位图 + assets/sfx/*.wav + assets/skins/platformer/skin.css
         tests/    platformer_test.zan（玩法断言用例）
-        tools/    build.ps1 / test.ps1 / zanc.ps1
+        tools/    build.ps1 / test.ps1 / zanc.ps1 / make_assets.py / gen_assets.ps1
         ASSETS.md 素材清单
       build/      编译产物与一次性脚本（不入库）
       PROJECT.md  本文件
@@ -70,14 +79,17 @@
 
 | 文件 | 职责 |
 |---|---|
-| `main.zan` | GuiHost 入口：主循环、输入事件、按钮、存档落盘 |
+| `main.zan` | GuiHost 入口：主循环、输入事件、按钮、皮肤应用、存档落盘 |
 | `PlatformerGame.zan` | 玩法状态机（菜单/游戏中/结算）、事件队列、关卡推进、死亡与重生 |
 | `PlatformerPlayer.zan` | 玩家物理：加速度、摩擦、重力、终端速度、二段跳、平台碰撞 |
 | `PlatformerEnemy.zan` | 巡逻兵巡逻与边界折返 |
 | `PlatformerCoins.zan` | 晶片（金币） |
 | `PlatformerLevel.zan` | 三关地形 / 敌人 / 晶片 / 起点 / 出口旗数据 |
-| `PlatformerView.zan` | 渲染：视差、地形贴图、实体位图、HUD、菜单、结算面板 |
-| `PlatformerPaint.zan` | 逻辑坐标绘制原语（贴图、裁源贴图、文字、圆角矩形） |
+| `PlatformerView.zan` | 渲染：视差、地形贴图、实体位图（按朝向取帧）、HUD、菜单、结算面板 |
+| `PlatformerPaint.zan` | 逻辑坐标绘制原语（贴图、裁源贴图、九宫格、文字、圆角矩形） |
+| `PlatformerFacing.zan` | 朝向 → 取帧索引的纯函数（帧规则唯一真源） |
+| `PlatformerPalette.zan` | 色板：所有画面颜色只有这一处出处 |
+| `PlatformerFx.zan` | 画面特效：起跳 / 落地的尘土粒子 |
 | `GameShell.zan` | 存档（累计数据）+ 设置（难度 / 音效）+ 设置浮层 |
 | `PlatformerSnd.zan` | 音效库封装（加载 + 事件播放） |
 
@@ -100,8 +112,9 @@ pwsh -File client/tools/test.ps1 -PackageProject D:/project/zan-head
 
 三段全绿才算过：
 
-1. `platformer_test_OK` —— 玩法断言用例（143 条断言：重力与落地、二段跳、加速与摩擦、
-   踩敌与撞敌、晶片、坠亡扣命与重生、三关推进与结算、存档读写、三个随机种子的完整流程）。
+1. `platformer_test_OK` —— 玩法断言用例（164 条断言：重力与落地、二段跳、加速与摩擦、
+   **朝向取帧映射**、踩敌与撞敌、晶片、坠亡扣命与重生、三关推进与结算、存档读写、
+   三个随机种子的完整流程）。
 2. `platformer_SAVE_OK runs=1 -> runs=2` —— 存档写两遍读得到。
 3. `platformer_SMOKE_OK` —— 无头冒烟跑满 180 帧自行退出。
 
@@ -109,13 +122,28 @@ pwsh -File client/tools/test.ps1 -PackageProject D:/project/zan-head
 
 ## 截图验收
 
+窗口像素抓取（`scripts/shot_window.py` 抓的是窗口真实像素，不是后端画布）：
+
 ```powershell
-$env:PLATFORMER_DEMO = '1'   # 跳过菜单直接进关卡并自动操作
+$out = 'build/platformer'
+$env:ZAN_UI_OUT = "$out/uidrv"
+$env:ZAN_UI_SCRIPT = 'client/tools/shot_face_right.script'   # 点「开始游戏」后按住 D
 python D:/project/zan-lang/scripts/shot_window.py `
-  build/platformer/Platformer.exe build/platformer/shot.png 4.0 build/platformer
+  "$out/Platformer.exe" "$out/ui_face_right.png" 4.2 $out
 ```
 
-`PLATFORMER_DEMO=1` 是演示模式（自动向右走 + 周期起跳），给无头验收和截图用。
+三个驱动脚本都在 `client/tools/`（可复现）：
+
+| 脚本 | 产出 | 说明 |
+|---|---|---|
+| `shot_face_right.script` | `ui_face_right.png` | 按住 `D`，角色朝右 |
+| `shot_face_left.script` | `ui_face_left.png` | 先右后左，角色朝左（松手后朝向保持） |
+| `shot_settings.script` | `ui_settings.png` | `Esc` 打开设置浮层（皮肤包外观） |
+
+脚本用引擎自带的 UiDriver 注入合成输入（**不移动系统鼠标**）；点击坐标是客户区
+像素，窗口带标题栏时要加一个标题栏高度（见脚本注释）。
+
+`PLATFORMER_DEMO=1` 是演示模式（自动向右走 + 周期起跳），给无头验收用。
 
 ## 环境变量
 

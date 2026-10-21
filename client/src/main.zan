@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Gui;
+using Gui.Widget;
 using Game.Foundation.Gui;
 using Game.Kit;
 
@@ -42,6 +43,7 @@ public class PlatformerApp : IGuiHostLoop {
     public PlatformerGame game;
     public PlatformerView view;
     public PlatformerSnd snd;
+    public PlatformerFx fx;
     public List<PlatformerButton> buttons;
     public int frames;
     public bool smokeMode;
@@ -56,6 +58,7 @@ public class PlatformerApp : IGuiHostLoop {
         this.game = new PlatformerGame(this.shell);
         this.view = new PlatformerView();
         this.snd = new PlatformerSnd();
+        this.fx = new PlatformerFx();
         this.smokeMode = Environment.GetEnvironmentVariable("PLATFORMER_SMOKE") == "1";
         this.smokeFrames = 90;
         string framesEnv = Environment.GetEnvironmentVariable("PLATFORMER_FRAMES");
@@ -78,6 +81,9 @@ public class PlatformerApp : IGuiHostLoop {
 
     public void Start(GuiHost h) {
         this.host = h;
+        // 皮肤包（跃迁山谷风）：必须在默认皮肤之后应用，否则会被盖回去。
+        // 皮肤目录在 exe 同级 skins/platformer/（构建时拷过去）。
+        h.App().UseSkin("platformer");
         // 设置浮层挂到 HUD 层（标准库控件，盖在游戏画面之上）。
         h.Hud().Add(this.shell.Overlay().Root());
         // 无头冒烟与演示模式：跳过菜单直接进对局。
@@ -115,6 +121,7 @@ public class PlatformerApp : IGuiHostLoop {
         float dt = (float)deltaMilliseconds / 1000.0f;
         if (dt > 0.05f) { dt = 0.05f; }
         if (dt < 0.0f) { dt = 0.0f; }
+        this.fx.Update(dt);
         this.game.Update(dt);
         this.DrainEvents();
     }
@@ -130,7 +137,7 @@ public class PlatformerApp : IGuiHostLoop {
             this.buttons.Add(new PlatformerButton("设置", "settings",
                 w - 108, 6, 88, 34, false));
         } else {
-            this.view.DrawGame(c, this.game, w, hh);
+            this.view.DrawGame(c, this.game, w, hh, this.fx);
             if (this.game.screen == 2) {
                 this.view.DrawResult(c, this.game, w, hh, this.shell);
                 this.buttons.Add(new PlatformerButton("再来一局", "restart",
@@ -147,6 +154,18 @@ public class PlatformerApp : IGuiHostLoop {
                 && this.host.MouseX() >= b.x && this.host.MouseX() < b.x + b.w
                 && this.host.MouseY() >= b.y && this.host.MouseY() < b.y + b.h;
             this.view.DrawButton(c, b.label, b.x, b.y, b.w, b.h, hover, b.primary);
+        }
+        // 设置浮层是 HUD 控件：宿主每帧只"画"HUD、不给 HUD 控件排版，
+        // 浮层根得先测量再按画布尺寸排一次，内容盒（card）才有尺寸、
+        // 才画得出来（否则整层是空的——Esc 打开等于没打开）。
+        // 放在本帧画面画完之后：测量会动到画布的样式状态，不能插在
+        // 画面绘制中间。
+        if (this.shell.Overlay().IsOpen() && h.App() != null) {
+            App app = h.App();
+            Control overlayRoot = this.shell.Overlay().Root();
+            int top = app.ContentTop();
+            overlayRoot.MeasureTree(app);
+            overlayRoot.Arrange(0, top, c.Width(), c.Height() - top);
         }
         if (this.capturePath != "" && this.frames == this.captureFrame) {
             c.WritePixels(this.capturePath, 0, 0, c.Width(), c.Height());
@@ -178,12 +197,22 @@ public class PlatformerApp : IGuiHostLoop {
             + " assets=" + Convert.ToString(this.view.assetsReady));
     }
 
-    // 把本帧的玩法事件转成音效。
+    // 把本帧的玩法事件转成音效与画面特效。
     void DrainEvents() {
         if (this.game.events.Count == 0) { return; }
         bool sound = this.shell.Sound();
+        PlatformerPlayer p = this.game.player;
         for (int i = 0; i < this.game.events.Count; i = i + 1) {
-            if (sound) { this.snd.Play(this.game.events[i]); }
+            string ev = this.game.events[i];
+            if (sound) { this.snd.Play(ev); }
+            // 落地扬起尘土、起跳踢起一小片。
+            if (ev == "land") {
+                this.fx.SpawnDust(p.x + (float)PlatformerPlayer.W * 0.5f,
+                    p.y + (float)PlatformerPlayer.H, 7, PlatformerPalette.Dust, 1.0f);
+            } else if (ev == "jump") {
+                this.fx.SpawnDust(p.x + (float)PlatformerPlayer.W * 0.5f,
+                    p.y + (float)PlatformerPlayer.H, 4, PlatformerPalette.Dust, 0.6f);
+            }
         }
         this.game.events.Clear();
     }

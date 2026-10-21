@@ -54,11 +54,57 @@ public class PlatformerPaint {
         c.BlitImage(key, X(x), Y(y), S(w), S(h), 0, 0, 0, 0);
     }
 
-    // 裁源矩形贴图：视差背景靠它取景（不靠平移两张拼接，免得有竖缝）。
+    // 裁源矩形贴图：视差背景靠它取景（不靠平移两张拼接，免得有竖缝）；
+    // 朝向精灵表也靠它取帧。
     public static void BlitSrc(Canvas c, string key, int x, int y, int w, int h,
                                int sx, int sy, int sw, int sh) {
         if (key == null || key == "") { return; }
+        if (w <= 0 || h <= 0) { return; }
         if (sw <= 0 || sh <= 0) { return; }
         c.BlitImage(key, X(x), Y(y), S(w), S(h), sx, sy, sw, sh);
+    }
+
+    // 九宫格贴图：把源图切成 9 块拼到目标矩形
+    // （四角原样、上下左右边拉伸、中间平铺）。
+    //
+    // 引擎没有 border-image，CSS 也没有九宫格，所以底板只能自己切。
+    // corner 是角切片的边长（**源图像素**）：所有圆弧与装饰都必须落在角
+    // 切片内，否则拉伸时会被拉变形。
+    public static void NineSlice(Canvas c, string key, int x, int y, int w, int h,
+                                  int corner) {
+        if (key == null || key == "") { return; }
+        if (w <= 0 || h <= 0) { return; }
+        int iw = Canvas.ImageWidth(key);
+        int ih = Canvas.ImageHeight(key);
+        if (iw <= 0 || ih <= 0) { return; }
+        int cnr = corner;
+        if (cnr > iw / 2) { cnr = iw / 2; }
+        if (cnr > ih / 2) { cnr = ih / 2; }
+        if (cnr > w / 2) { cnr = w / 2; }
+        if (cnr > h / 2) { cnr = h / 2; }
+        if (cnr <= 0) { return; }
+        int mw = iw - cnr * 2;      // 源图中间列/行宽
+        int mh = ih - cnr * 2;
+        int dw = w - cnr * 2;      // 目标中间列/行宽
+        int dh = h - cnr * 2;
+        // 四角：原样贴。
+        PlatformerPaint.BlitSrc(c, key, x, y, cnr, cnr, 0, 0, cnr, cnr);
+        PlatformerPaint.BlitSrc(c, key, x + w - cnr, y, cnr, cnr, iw - cnr, 0, cnr, cnr);
+        PlatformerPaint.BlitSrc(c, key, x, y + h - cnr, cnr, cnr, 0, ih - cnr, cnr, cnr);
+        PlatformerPaint.BlitSrc(c, key, x + w - cnr, y + h - cnr, cnr, cnr,
+            iw - cnr, ih - cnr, cnr, cnr);
+        // 四边：横边横拉、竖边竖拉。
+        PlatformerPaint.BlitSrc(c, key, x + cnr, y, dw, cnr, cnr, 0, mw, cnr);
+        PlatformerPaint.BlitSrc(c, key, x + cnr, y + h - cnr, dw, cnr, cnr, ih - cnr, mw, cnr);
+        PlatformerPaint.BlitSrc(c, key, x, y + cnr, cnr, dh, 0, cnr, cnr, mh);
+        PlatformerPaint.BlitSrc(c, key, x + w - cnr, y + cnr, cnr, dh, iw - cnr, cnr, cnr, mh);
+        // 中间：整块拉伸（底板中间是纯色/渐变，拉伸不会变形）。
+        PlatformerPaint.BlitSrc(c, key, x + cnr, y + cnr, dw, dh, cnr, cnr, mw, mh);
+    }
+
+    // 量一段文字的像素宽（布局用）。
+    public static int Measure(Canvas c, string text, int size) {
+        if (text == null || text == "") { return 0; }
+        return c.MeasureText(text, S(size));
     }
 }

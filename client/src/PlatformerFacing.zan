@@ -1,0 +1,48 @@
+using System;
+
+// 朝向 → 取帧索引（纯函数，不碰画布）。
+//
+// 为什么必须离线烘焙：引擎运行时转不了图——Canvas.BlitImage 只有源矩形
+// (sx,sy,sw,sh)，没有旋转也没有水平翻转；Gui.SpriteBatch 的每精灵同样只有
+// dx,dy,dw,dh,sx,sy,sw,sh,tint。所以"把角色转个方向"只能在素材阶段做。
+//
+// 本项目的做法：玩家与巡逻兵各出一张**两帧精灵表**，
+//   帧索引 0 = 原图（朝右）
+//   帧索引 1 = 水平镜像（朝左）
+//   源矩形   = (索引 * 帧宽, 0, 帧宽, 帧高)   ← 源图像素，不是显示像素
+//
+// 帧宽/帧高是**入库图的像素**（显示尺寸的 2 倍），与
+// client/tools/make_assets.py 生成的精灵表一一对应；改那边必须同步改这里
+// （client/ASSETS.md 有同一份口径，断言用例按这里钉住）。
+public class PlatformerFacing {
+    public const int FrameRight = 0;
+    public const int FrameLeft = 1;
+    public const int Frames = 2;
+
+    // 玩家精灵表：144x100 = 两帧 72x100（显示 36x50）。
+    public const int PlayerFrameW = 72;
+    public const int PlayerFrameH = 100;
+    // 巡逻兵精灵表：176x76 = 两帧 88x76（显示 44x38）。
+    public const int DroneFrameW = 88;
+    public const int DroneFrameH = 76;
+
+    // 玩家取帧索引。
+    public static int PlayerFrame(bool facingRight) {
+        return facingRight ? PlatformerFacing.FrameRight : PlatformerFacing.FrameLeft;
+    }
+
+    // 巡逻兵取帧索引（朝巡逻方向）。
+    public static int DroneFrame(bool facingRight) {
+        return facingRight ? PlatformerFacing.FrameRight : PlatformerFacing.FrameLeft;
+    }
+
+    // 玩家帧的源矩形左边界（源图像素）。
+    public static int PlayerSrcX(bool facingRight) {
+        return PlatformerFacing.PlayerFrame(facingRight) * PlatformerFacing.PlayerFrameW;
+    }
+
+    // 巡逻兵帧的源矩形左边界（源图像素）。
+    public static int DroneSrcX(bool facingRight) {
+        return PlatformerFacing.DroneFrame(facingRight) * PlatformerFacing.DroneFrameW;
+    }
+}
