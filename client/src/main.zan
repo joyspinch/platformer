@@ -1,191 +1,217 @@
 using System;
+using System.Collections.Generic;
 using Gui;
-using Gui.Backend;
+using Game.Foundation.Gui;
+using Game.Kit;
 
-// 雪线跳跃 · PLATFORMER —— 阶段一：项目骨架 + 最小可玩场景。
+// 一个可点的按钮。
+public class PlatformerButton {
+    public string label;
+    public string action;
+    public int x;
+    public int y;
+    public int w;
+    public int h;
+    public bool primary;
+
+    public PlatformerButton(string label, string action, int x, int y, int w, int h, bool primary) {
+        this.label = label;
+        this.action = action;
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.primary = primary;
+    }
+}
+
+// 跃迁山谷 · PLATFORMER 入口：GuiHost 跑主循环。
 //
-// 参考源：SuperTux/supertux（代码 GPL-3.0；素材 data/AUTHORS 逐件声明，
-// 多为 CC-BY-SA，images/objects/conveyor_belt/* 为 CC BY-NC 4.0 不取）。
-// 抄的是横版平台跳跃的关卡结构、物理手感与敌人行为，不是它的代码与素材。
-//
-// Zan 路线：2D sprite 批（Canvas.SpriteHandle / DrawSprites）+ AABB 物理。
-// 本文件只画几何占位，位图管线接上后由 src/Sprites/ 下的图集接管。
+// 画面用 Canvas 直绘（自绘游戏），设置浮层用标准库控件挂在 HUD 层上——
+// 两者各司其职：游戏画面要贴图，设置要标准控件。
 //
 // 环境变量：
-//   PLATFORMER_SMOKE=1          跑满 PLATFORMER_FRAMES 帧后自行退出
-//   PLATFORMER_FRAMES=<n>       冒烟帧数（默认 90）
-//   PLATFORMER_CAPTURE=<path>   指定帧把画布写成 .zpx 帧文件
-//   PLATFORMER_SAVE=<dir>       存档目录（测试脚本用临时目录）
-public class Program {
-    Form form;
-    App app;
-    GameShell shell;
-    int frames = 0;
+//   PLATFORMER_SMOKE=1         跑满 PLATFORMER_FRAMES 帧后自行退出
+//   PLATFORMER_FRAMES=<n>      冒烟帧数（默认 90）
+//   PLATFORMER_DEMO=1          演示模式：跳过菜单直接进关卡并自动操作
+//   PLATFORMER_CAPTURE=<path>  指定帧把画布写成 .zpx 帧文件
+//   PLATFORMER_SAVE=<dir>      存档目录（测试脚本用临时目录）
+public class PlatformerApp : IGuiHostLoop {
+    public GuiHost host;
+    public GameShell shell;
+    public PlatformerGame game;
+    public PlatformerView view;
+    public PlatformerSnd snd;
+    public List<PlatformerButton> buttons;
+    public int frames;
+    public bool smokeMode;
+    public int smokeFrames;
+    public string capturePath;
+    public int captureFrame;
+    bool finished;
 
-    // ---- 场景参数 ----
-    const int GroundY = 560;
-    // 地面上的一个坑：掉进去 = 死亡，回到起点重来。
-    const int PitX = 480;
-    const int PitW = 120;
-    int playerX = 220;
-    int playerY = GroundY - 44;
-    int playerV = -420;
-    bool onGround = true;
-    bool inPit = false;
-    int tick = 0;
+    public PlatformerApp() {
+        this.buttons = new List<PlatformerButton>();
+        this.shell = new GameShell();
+        this.game = new PlatformerGame(this.shell);
+        this.view = new PlatformerView();
+        this.snd = new PlatformerSnd();
+        this.smokeMode = Environment.GetEnvironmentVariable("PLATFORMER_SMOKE") == "1";
+        this.smokeFrames = 90;
+        string framesEnv = Environment.GetEnvironmentVariable("PLATFORMER_FRAMES");
+        if (framesEnv != "") { this.smokeFrames = Convert.ToInt32(framesEnv); }
+        this.capturePath = Environment.GetEnvironmentVariable("PLATFORMER_CAPTURE");
+        this.captureFrame = 120;
+        string capEnv = Environment.GetEnvironmentVariable("PLATFORMER_CAPTURE_FRAME");
+        if (capEnv != "") { this.captureFrame = Convert.ToInt32(capEnv); }
+        this.game.demoMode = Environment.GetEnvironmentVariable("PLATFORMER_DEMO") == "1";
+        this.view.LoadAssets();
+    }
 
     static void Main() {
-        Program p = new Program();
-        p.Run();
+        PlatformerApp app = new PlatformerApp();
+        GuiHost host = new GuiHost("跃迁山谷 · PLATFORMER", 1280, 720, 16);
+        host.Run(app);
     }
 
-    void Run() {
-        form = Form.CreateDark("雪线跳跃 · PLATFORMER", 1280, 720);
-        app = form.GetApp();
-        app.UseSkin("dark");
-        Canvas.SetBackend(1);
-        // 外壳：存档（最远距离/死亡数）+ 设置浮层。浮层是标准库控件，
-        // 盖在直绘画面之上——Esc 开关。
-        this.shell = new GameShell();
-        form.Add(this.shell.Overlay().Root());
-        app.Show();
-        app.RequestRedraw();
-        while (true) {
-            int got = app.PollOneEvent();
-            if (got < 0) {
-                this.Finish();
-                break;
-            }
-            // Esc 开关设置浮层（只有真有事件时才看键码，否则会拿上一帧的
-            // 残留值反复开关）。
-            if (got == 1 && app.window.EventKind() == 4
-                && app.window.EventKeyCode() == Keys.Escape()) {
-                this.shell.Overlay().Toggle();
-            }
-            this.shell.Overlay().Tick();
-            int dt = 16;
-            Tick(dt);
-            app.BeginFrame();
-            Render();
-            // 控件树叠在直绘之上：测量 → 排布 → 绘制。
-            form.MeasureTree(app);
-            form.Arrange(app.ShapeOffX(), app.ContentTop() + app.ShapeOffY(),
-                app.ClientWidth(), app.ClientHeight() - app.ContentTop());
-            form.RenderTree(app);
-            app.RenderChrome("雪线跳跃 · PLATFORMER");
-            frames = frames + 1;
-            app.PresentFrame();
-            if (IsSmoke() && frames >= SmokeFrames()) {
-                Console.WriteLine("PLATFORMER_SMOKE_OK frames=" + Convert.ToString(frames));
-                this.Finish();
-                break;
-            }
-            app.RequestRedraw();
-            Window.SleepMs(16);
+    // ----- IGuiHostLoop ---------------------------------------------------
+
+    public void Start(GuiHost h) {
+        this.host = h;
+        // 设置浮层挂到 HUD 层（标准库控件，盖在游戏画面之上）。
+        h.Hud().Add(this.shell.Overlay().Root());
+        // 无头冒烟与演示模式：跳过菜单直接进对局。
+        if (this.smokeMode || this.game.demoMode) {
+            this.game.StartRun();
         }
     }
 
-    // 收尾：存档落盘 + 打印读回值（测试脚本靠这行验证"跑两遍读得到"）。
+    // kind：1=鼠标移动 2=鼠标按下 3=鼠标释放 4=键按下 5=键抬起。
+    public void Event(GuiHost h, int kind, int keycode) {
+        if (kind == 4) {
+            if (keycode == 27) { this.shell.Overlay().Toggle(); return; }
+            this.game.OnKeyDown(keycode);
+            return;
+        }
+        if (kind == 5) { this.game.OnKeyUp(keycode); return; }
+        if (kind != 3) { return; }
+        this.OnClick(h.MouseX(), h.MouseY());
+    }
+
+    public void FixedUpdate(GuiHost h, int deltaMilliseconds) { }
+
+    public void Update(GuiHost h, int deltaMilliseconds) {
+        this.shell.Overlay().Tick();
+        this.snd.Update(deltaMilliseconds);
+        // 帧计数放在 Update：窗口不可见时宿主跳过渲染（Render 不跑），
+        // 无头冒烟靠这个计数收尾。
+        this.frames = this.frames + 1;
+        if (this.smokeMode && this.frames >= this.smokeFrames) {
+            this.Finish();
+            h.RequestStop();
+            return;
+        }
+        if (this.game.screen != 1) { return; }
+        float dt = (float)deltaMilliseconds / 1000.0f;
+        if (dt > 0.05f) { dt = 0.05f; }
+        if (dt < 0.0f) { dt = 0.0f; }
+        this.game.Update(dt);
+        this.DrainEvents();
+    }
+
+    public void Render(GuiHost h, Canvas c, double alpha) {
+        int w = h.StageWidth();
+        int hh = h.StageHeight();
+        this.buttons.Clear();
+        if (this.game.screen == 0) {
+            this.view.DrawMenu(c, w, hh, this.shell);
+            this.buttons.Add(new PlatformerButton("开始游戏", "start",
+                w / 2 - 90, hh / 2 + 30, 180, 48, true));
+            this.buttons.Add(new PlatformerButton("设置", "settings",
+                w - 108, 6, 88, 34, false));
+        } else {
+            this.view.DrawGame(c, this.game, w, hh);
+            if (this.game.screen == 2) {
+                this.view.DrawResult(c, this.game, w, hh, this.shell);
+                this.buttons.Add(new PlatformerButton("再来一局", "restart",
+                    w / 2 - 200, hh / 2 + 130, 180, 46, true));
+                this.buttons.Add(new PlatformerButton("回到主菜单", "menu",
+                    w / 2 + 20, hh / 2 + 130, 180, 46, false));
+            }
+            this.buttons.Add(new PlatformerButton("设置", "settings",
+                w - 108, 6, 88, 34, false));
+        }
+        for (int i = 0; i < this.buttons.Count; i = i + 1) {
+            PlatformerButton b = this.buttons[i];
+            bool hover = this.host != null
+                && this.host.MouseX() >= b.x && this.host.MouseX() < b.x + b.w
+                && this.host.MouseY() >= b.y && this.host.MouseY() < b.y + b.h;
+            this.view.DrawButton(c, b.label, b.x, b.y, b.w, b.h, hover, b.primary);
+        }
+        if (this.capturePath != "" && this.frames == this.captureFrame) {
+            c.WritePixels(this.capturePath, 0, 0, c.Width(), c.Height());
+            Console.WriteLine("PLATFORMER_CAPTURE " + Convert.ToString(c.Width())
+                + "x" + Convert.ToString(c.Height()));
+        }
+    }
+
+    public void Stop(GuiHost h) {
+        this.Finish();
+    }
+
+    // 收尾：成绩落盘 + 打印读回值（测试脚本靠这行验证"跑两遍读得到"）。
     void Finish() {
+        if (this.finished) { return; }
+        this.finished = true;
+        this.game.FlushSave();
         this.shell.Save();
-        Console.WriteLine("PLATFORMER_SAVE best=" + Convert.ToString(this.shell.Best())
+        Console.WriteLine("PLATFORMER_SAVE level=" + Convert.ToString(this.shell.Level())
+            + " clears=" + Convert.ToString(this.shell.Clears())
+            + " bestTime=" + Convert.ToString(this.shell.BestTime())
+            + " score=" + Convert.ToString(this.shell.Score())
             + " deaths=" + Convert.ToString(this.shell.Deaths())
             + " runs=" + Convert.ToString(this.shell.Runs()));
+        if (this.smokeMode) {
+            Console.WriteLine("PLATFORMER_SMOKE_OK frames=" + Convert.ToString(this.frames));
+        }
+        Console.WriteLine("PLATFORMER_SFX loaded=" + Convert.ToString(this.snd.loaded)
+            + " assets=" + Convert.ToString(this.view.assetsReady));
     }
 
-    bool IsSmoke() {
-        return Environment.GetEnvironmentVariable("PLATFORMER_SMOKE") == "1";
+    // 把本帧的玩法事件转成音效。
+    void DrainEvents() {
+        if (this.game.events.Count == 0) { return; }
+        bool sound = this.shell.Sound();
+        for (int i = 0; i < this.game.events.Count; i = i + 1) {
+            if (sound) { this.snd.Play(this.game.events[i]); }
+        }
+        this.game.events.Clear();
     }
 
-    int SmokeFrames() {
-        string v = Environment.GetEnvironmentVariable("PLATFORMER_FRAMES");
-        if (v == "") { return 90; }
-        return Convert.ToInt32(v);
+    // ----- 点击 -----------------------------------------------------------
+
+    void OnClick(int mx, int my) {
+        if (this.shell.Overlay().IsOpen()) { return; }
+        for (int i = 0; i < this.buttons.Count; i = i + 1) {
+            PlatformerButton b = this.buttons[i];
+            if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) { continue; }
+            this.OnButton(b);
+            return;
+        }
     }
 
-    // ---- 逻辑：最小跳跃循环（位图阶段换成精灵 + 帧动画） ----
-    void Tick(int dt) {
-        tick = tick + dt;
-        // 难度档（1/2/3）决定重力、跑速与起跳高度——设置不是摆设。
-        int level = this.shell.Difficulty();
-        int gravity = 1800 + level * 300;   // 2100 / 2400 / 2700
-        int speed = 3 + level;              // 4 / 5 / 6
-        int jump = -540 + level * 60;       // -480 / -420 / -360
-        playerX = playerX + speed;
-        if (playerX > 1180) {
-            // 冲出关卡右边界：算一次死亡，回到起点。
-            this.shell.RecordDeath();
-            playerX = 120;
-            playerY = GroundY - 44;
-            playerV = 0;
-            onGround = true;
+    void OnButton(PlatformerButton b) {
+        if (b.action == "start" || b.action == "restart") {
+            this.game.StartRun();
+            return;
         }
-        if (this.shell.AutoJump() && onGround) {
-            // 自动跳跃：落地即起跳，一路连蹦。
-            playerV = jump;
-            onGround = false;
+        if (b.action == "menu") {
+            this.game.screen = 0;
+            return;
         }
-        playerV = playerV + gravity * dt / 1000;
-        playerY = playerY + playerV * dt / 1000;
-        bool overPit = playerX >= PitX && playerX < PitX + PitW;
-        if (overPit && onGround) {
-            // 踏空：掉进坑里（落地判定不再生效，一路往下掉）。
-            inPit = true;
-            onGround = false;
+        if (b.action == "settings") {
+            this.shell.Overlay().Toggle();
+            return;
         }
-        if (!inPit && playerY >= GroundY - 44) {
-            playerY = GroundY - 44;
-            playerV = 0;
-            onGround = true;
-        }
-        if (playerY > 700) {
-            // 掉出坑底：算一次死亡，回到起点。
-            this.shell.RecordDeath();
-            playerX = 120;
-            playerY = GroundY - 44;
-            playerV = 0;
-            onGround = true;
-            inPit = false;
-        }
-        // 跑到哪了：最远距离进存档。
-        this.shell.RecordDistance(playerX);
-    }
-
-    // ---- 渲染：几何占位（雪原 + 平台 + 跳跃方块） ----
-    void Render() {
-        Canvas c = app.canvas;
-        int w = c.Width();
-        int h = c.Height();
-        c.FillVGrad(0, 0, w, h, 0xFF2B4C7E, 0xFF9CC4E8);
-        // 远山
-        c.FillRect(0, GroundY - 120, w, 120, 0xFF3B5F8C);
-        // 雪原地面（中间留一个坑）
-        c.FillRect(0, GroundY, PitX, h - GroundY, 0xFFF2F6FA);
-        c.FillRect(PitX + PitW, GroundY, w - PitX - PitW, h - GroundY, 0xFFF2F6FA);
-        c.FillRect(0, GroundY, PitX, 4, 0xFFCBD9E8);
-        c.FillRect(PitX + PitW, GroundY, w - PitX - PitW, 4, 0xFFCBD9E8);
-        // 坑（暗色）
-        c.FillRect(PitX, GroundY, PitW, h - GroundY, 0xFF16233A);
-        // 平台
-        c.FillRect(300, GroundY - 110, 150, 16, 0xFF8B6B4A);
-        c.FillRect(760, GroundY - 190, 130, 16, 0xFF8B6B4A);
-        // 雪堆
-        c.FillCircle(700, GroundY - 8, 22, 0xFFE6EEF6);
-        // 玩家方块（位图阶段替换为雪地角色 sprite）
-        c.FillRect(playerX, playerY, 44, 44, 0xFF2E7D32);
-        c.DrawRect(playerX, playerY, 44, 44, 0xFF16351A, 3);
-        c.FillRect(playerX + 8, playerY + 8, 28, 12, 0xFFF5F7FA);
-        // HUD
-        c.DrawText(16, 16, "雪线跳跃 · 骨架阶段", 0xFFFFFFFF, 20);
-        c.DrawText(16, 44, "x=" + Convert.ToString(playerX) + "  y=" + Convert.ToString(playerY)
-                   + "  v=" + Convert.ToString(playerV) + "  frames=" + Convert.ToString(frames),
-                   0xFFE8F0FA, 14);
-        c.DrawText(16, 66, "难度 " + Convert.ToString(this.shell.Difficulty())
-                   + "   死亡 " + Convert.ToString(this.shell.Deaths())
-                   + "   最远 " + Convert.ToString(this.shell.Best()),
-                   0xFFE8F0FA, 14);
-        c.DrawText(16, h - 50, "Esc 打开设置", 0xC09FB0C6, 14);
-        c.DrawText(16, h - 26, "TODO 位图：tux 角色帧 / 雪地 tile / 冰面 tile / 视差背景三层",
-                   0xC0E8F0FA, 14);
     }
 }

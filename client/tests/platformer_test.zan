@@ -1,0 +1,490 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Json;
+using Game.Foundation;
+using Game.Kit;
+
+// 跃迁山谷 · PLATFORMER 玩法断言用例。
+//
+// 覆盖：重力与落地、二段跳、加速度与摩擦、踩敌与撞敌、晶片、
+// 坠亡扣命与重生、三关推进与结算、存档读写、三个随机种子的完整流程。
+//
+// 判据：全部断言通过则打印 "platformer_test OK"。
+public class PlatformerTest {
+    static int failures = 0;
+    static int checks = 0;
+
+    static void Ok(bool cond, string label) {
+        checks = checks + 1;
+        if (!cond) {
+            failures = failures + 1;
+            Console.WriteLine("FAIL " + label);
+        }
+    }
+
+    static void Eq(int got, int want, string label) {
+        Ok(got == want, label + " got=" + Convert.ToString(got)
+            + " want=" + Convert.ToString(want));
+    }
+
+    static void Near(float got, float want, float eps, string label) {
+        float d = got - want;
+        if (d < 0.0f) { d = -d; }
+        Ok(d <= eps, label + " got=" + Convert.ToString(got)
+            + " want=" + Convert.ToString(want));
+    }
+
+    static float AbsF(float v) { return v < 0.0f ? -v : v; }
+
+    // 造一局新游戏（不接存档）。
+    static PlatformerGame NewGame() {
+        PlatformerGame g = new PlatformerGame(null);
+        g.StartRun();
+        return g;
+    }
+
+    // 推进 n 帧（无输入）。
+    static void Step(PlatformerGame g, int frames) {
+        for (int i = 0; i < frames; i = i + 1) {
+            g.keyLeft = false;
+            g.keyRight = false;
+            g.keyJump = false;
+            g.Update(0.016f);
+        }
+    }
+
+    // 推进 n 帧，按住 right，可选跳跃沿信号。
+    static void StepRight(PlatformerGame g, int frames, bool jumpFirst) {
+        for (int i = 0; i < frames; i = i + 1) {
+            g.keyLeft = false;
+            g.keyRight = true;
+            g.keyJump = jumpFirst && i == 0;
+            g.Update(0.016f);
+        }
+    }
+
+    // ---- 关卡数据 -------------------------------------------------------
+
+    static void TestLevels() {
+        for (int i = 0; i < PlatformerGame.LevelCount; i = i + 1) {
+            PlatformerLevel lv = PlatformerLevel.Build(i);
+            Ok(lv.name != "", "第" + Convert.ToString(i) + " 关有名字");
+            Ok(lv.width > 2000, "第" + Convert.ToString(i) + " 关够长 width="
+                + Convert.ToString(lv.width));
+            Ok(lv.solids.Count > 5, "第" + Convert.ToString(i) + " 关有地形 solids="
+                + Convert.ToString(lv.solids.Count));
+            Ok(lv.enemies.Count >= 3, "第" + Convert.ToString(i) + " 关有巡逻兵 enemies="
+                + Convert.ToString(lv.enemies.Count));
+            Ok(lv.shards.Count >= 6, "第" + Convert.ToString(i) + " 关有晶片 shards="
+                + Convert.ToString(lv.shards.Count));
+            Ok(lv.exitX > lv.width - 200, "第" + Convert.ToString(i) + " 关旗子在终点");
+            Ok(lv.startX < 200, "第" + Convert.ToString(i) + " 关起点靠左");
+            Eq(lv.startY, PlatformerLevel.GroundY - PlatformerLevel.PlayerH,
+                "第" + Convert.ToString(i) + " 关起点贴着地面");
+            // 每关的缺口（陷阱）都存在：地面段不是一整条。
+            int groundPieces = 0;
+            for (int k = 0; k < lv.solids.Count; k = k + 1) {
+                PlatformerSolid s = lv.solids[k];
+                if (s.y == PlatformerLevel.GroundY && s.h == 200) { groundPieces = groundPieces + 1; }
+            }
+            Ok(groundPieces >= 2, "第" + Convert.ToString(i) + " 关有死亡陷阱（分段地面）");
+        }
+        PlatformerLevel a = PlatformerLevel.Build(0);
+        PlatformerLevel b = PlatformerLevel.Build(1);
+        PlatformerLevel c = PlatformerLevel.Build(2);
+        Ok(a.width != b.width && b.width != c.width, "三关宽度不同");
+        Ok(c.enemies.Count > a.enemies.Count, "第三关敌人最多");
+    }
+
+    // ---- 重力与落地 -----------------------------------------------------
+
+    static void TestGravityAndLanding() {
+        PlatformerGame g = NewGame();
+        PlatformerPlayer p = g.player;
+        // 起点就在地面上：落地后 y 稳定在平台上。
+        Eq((int)p.y, PlatformerLevel.GroundY - PlatformerPlayer.H, "起点 y 贴着地面");
+        Ok(p.onGround, "起点 onGround");
+        Step(g, 30);
+        Eq((int)p.y, PlatformerLevel.GroundY - PlatformerPlayer.H, "站着不动 y 不变");
+        Ok(p.onGround, "站着不动仍然 onGround");
+        Near(p.vy, 0.0f, 0.001f, "站着不动 vy = 0");
+
+        // 空中：y 单调增大（重力持续加速）。
+        p.y = 100.0f;
+        p.vy = 0.0f;
+        p.onGround = false;
+        float prevY = p.y;
+        bool monotonic = true;
+        for (int i = 0; i < 20; i = i + 1) {
+            g.keyLeft = false; g.keyRight = false; g.keyJump = false;
+            g.Update(0.016f);
+            if (p.y <= prevY) { monotonic = false; }
+            prevY = p.y;
+        }
+        Ok(monotonic, "空中 y 单调增大（重力）");
+        Ok(p.vy > 0.0f, "下落时 vy > 0");
+        Ok(p.y > 100.0f, "下落后 y 变大");
+
+        // 终端速度封顶。
+        Step(g, 300);
+        Ok(p.vy <= 1400.1f, "终端速度封顶 vy=" + Convert.ToString(p.vy));
+
+        // 从空中落回地面：站住而不是穿过去。
+        PlatformerGame g2 = NewGame();
+        PlatformerPlayer p2 = g2.player;
+        p2.y = 300.0f;
+        p2.vy = 0.0f;
+        p2.onGround = false;
+        bool landed = false;
+        for (int i = 0; i < 200; i = i + 1) {
+            g2.keyLeft = false; g2.keyRight = false; g2.keyJump = false;
+            g2.Update(0.016f);
+            if (p2.landed) { landed = true; }
+        }
+        Ok(landed, "从空中落下会触发落地事件");
+        Eq((int)p2.y, PlatformerLevel.GroundY - PlatformerPlayer.H, "落地后 y 正好在地面上");
+        Near(p2.vy, 0.0f, 0.001f, "落地后 vy 归零");
+        Ok(p2.onGround, "落地后 onGround = true");
+    }
+
+    // ---- 跳跃与二段跳 ---------------------------------------------------
+
+    static void TestJump() {
+        PlatformerGame g = NewGame();
+        PlatformerPlayer p = g.player;
+        // 地面跳。
+        g.keyJump = true;
+        g.Update(0.016f);
+        Ok(p.jumped, "地面跳触发 jumped");
+        Ok(p.vy < 0.0f, "起跳后 vy 为负");
+        Ok(!p.onGround, "起跳后离开地面");
+        Eq(p.jumpsLeft, 1, "地面跳后剩一次二段跳");
+
+        // 空中二段跳：只有一次。
+        g.keyJump = true;
+        g.Update(0.016f);
+        Ok(p.jumped, "空中二段跳触发 jumped");
+        Eq(p.jumpsLeft, 0, "二段跳后没有次数了");
+        // 第三次按：不许再跳。
+        float vyBefore = p.vy;
+        g.keyJump = true;
+        g.Update(0.016f);
+        Ok(!p.jumped, "第三次按空格不跳（三段跳被禁）");
+        Eq(p.jumpsLeft, 0, "三段跳后次数仍是 0");
+        Ok(p.vy >= vyBefore - 60.0f, "三段跳没有额外提速");
+
+        // 落地重置跳跃次数。
+        PlatformerGame g2 = NewGame();
+        PlatformerPlayer p2 = g2.player;
+        g2.keyJump = true;
+        g2.Update(0.016f);
+        Eq(p2.jumpsLeft, 1, "起跳后剩一次");
+        for (int i = 0; i < 200; i = i + 1) {
+            g2.keyLeft = false; g2.keyRight = false; g2.keyJump = false;
+            g2.Update(0.016f);
+        }
+        Eq(p2.jumpsLeft, 2, "落地后跳跃次数重置为 2");
+        Ok(p2.onGround, "落地后站在地上");
+    }
+
+    // ---- 加速度与摩擦 ---------------------------------------------------
+
+    static void TestMovement() {
+        PlatformerGame g = NewGame();
+        PlatformerPlayer p = g.player;
+        // 按住右：有加速度，v1 > v0。
+        g.keyRight = true;
+        g.keyJump = false;
+        g.Update(0.016f);
+        float v1 = p.vx;
+        Ok(v1 > 0.0f, "按住右键 vx 变正");
+        for (int i = 0; i < 60; i = i + 1) {
+            g.keyRight = true;
+            g.keyJump = false;
+            g.Update(0.016f);
+        }
+        Ok(p.vx > v1, "加速度让速度继续变大");
+        Ok(p.vx <= (float)p.maxSpeed + 0.001f, "速度不超过上限");
+        Near(p.vx, (float)p.maxSpeed, 1.0f, "长时间按住到达最大速度");
+
+        // 松手：摩擦减速到 0，且不反向。
+        bool neverNegative = true;
+        for (int i = 0; i < 60; i = i + 1) {
+            g.keyRight = false;
+            g.keyJump = false;
+            g.Update(0.016f);
+            if (p.vx < 0.0f) { neverNegative = false; }
+        }
+        Ok(neverNegative, "摩擦减速不会反向");
+        Near(p.vx, 0.0f, 0.001f, "松手后速度归零");
+
+        // 按住左：反向。
+        g.keyLeft = true;
+        g.keyRight = false;
+        g.keyJump = false;
+        g.Update(0.016f);
+        Ok(p.vx < 0.0f, "按住左键 vx 变负");
+        Ok(!p.facingRight, "面朝左");
+    }
+
+    // ---- 敌人 -----------------------------------------------------------
+
+    static void TestEnemy() {
+        PlatformerGame g = NewGame();
+        PlatformerEnemy e = g.enemies[0];
+        float x0 = e.x;
+        Step(g, 10);
+        Ok(e.x != x0, "巡逻兵会走动");
+        Ok(e.x >= e.minX && e.x <= e.maxX, "巡逻兵不越界");
+
+        // 走到边界会折返。
+        PlatformerGame g2 = NewGame();
+        PlatformerEnemy e2 = g2.enemies[0];
+        bool bounced = false;
+        float lastVx = e2.vx;
+        for (int i = 0; i < 2000; i = i + 1) {
+            g2.keyLeft = false; g2.keyRight = false; g2.keyJump = false;
+            g2.Update(0.016f);
+            if (e2.vx != lastVx) { bounced = true; break; }
+            lastVx = e2.vx;
+        }
+        Ok(bounced, "巡逻兵到边界会折返");
+
+        // 踩敌：下落速度 > 0 且脚底命中头顶 → 击杀 + 弹跳。
+        PlatformerGame g3 = NewGame();
+        PlatformerEnemy victim = g3.enemies[0];
+        PlatformerPlayer p3 = g3.player;
+        p3.x = victim.x + 4.0f;
+        p3.y = victim.y - 60.0f;
+        p3.vy = 300.0f;
+        p3.onGround = false;
+        bool stomped = false;
+        for (int i = 0; i < 60; i = i + 1) {
+            g3.keyLeft = false; g3.keyRight = false; g3.keyJump = false;
+            g3.Update(0.016f);
+            if (!victim.alive) { stomped = true; break; }
+        }
+        Ok(stomped, "踩敌能消灭巡逻兵");
+        Ok(p3.vy < 0.0f, "踩敌后玩家被弹起");
+        Ok(g3.events.Contains("stomp"), "踩敌触发 stomp 事件");
+
+        // 撞敌（侧面）：扣 1 血。
+        PlatformerGame g4 = NewGame();
+        PlatformerEnemy side = g4.enemies[0];
+        PlatformerPlayer p4 = g4.player;
+        int hpBefore = p4.hp;
+        p4.x = side.x + 10.0f;
+        p4.y = (float)(PlatformerLevel.GroundY - PlatformerPlayer.H);
+        p4.vy = 0.0f;
+        g4.keyLeft = false; g4.keyRight = false; g4.keyJump = false;
+        g4.Update(0.016f);
+        Eq(p4.hp, hpBefore - 1, "撞敌扣 1 血");
+        Ok(g4.events.Contains("hurt"), "撞敌触发 hurt 事件");
+        Ok(p4.Invincible(), "受伤后进入无敌状态");
+        // 无敌期内不再掉血。
+        int hpAfter = p4.hp;
+        p4.x = side.x + 10.0f;
+        p4.y = (float)(PlatformerLevel.GroundY - PlatformerPlayer.H);
+        g4.Update(0.016f);
+        Eq(p4.hp, hpAfter, "无敌期内不再扣血");
+
+        // 死掉的巡逻兵不再更新。
+        PlatformerGame g5 = NewGame();
+        PlatformerEnemy dead = g5.enemies[0];
+        dead.alive = false;
+        float deadX = dead.x;
+        Step(g5, 30);
+        Near(dead.x, deadX, 0.001f, "被消灭的巡逻兵不再巡逻");
+    }
+
+    // ---- 晶片 -----------------------------------------------------------
+
+    static void TestShards() {
+        PlatformerGame g = NewGame();
+        PlatformerShard s = g.shards[0];
+        int coinsBefore = g.coins;
+        int scoreBefore = g.score;
+        g.player.x = s.x + 2.0f;
+        g.player.y = s.y + 2.0f;
+        g.keyLeft = false; g.keyRight = false; g.keyJump = false;
+        g.Update(0.016f);
+        Ok(s.taken, "碰到晶片就收集");
+        Eq(g.coins, coinsBefore + 1, "晶片计数 +1");
+        Eq(g.score, scoreBefore + 10, "晶片加分");
+        Ok(g.events.Contains("shard"), "拾取触发 shard 事件");
+        // 同一枚不能收两次。
+        int coinsNow = g.coins;
+        g.Update(0.016f);
+        Eq(g.coins, coinsNow, "同一枚晶片不重复计数");
+    }
+
+    // ---- 坠亡、扣命与重生 -----------------------------------------------
+
+    static void TestDeath() {
+        PlatformerGame g = NewGame();
+        int livesBefore = g.lives;
+        int deathsBefore = g.deaths;
+        // 掉出屏幕底部。
+        g.player.y = (float)PlatformerLevel.DeathY + 10.0f;
+        g.player.vy = 500.0f;
+        g.keyLeft = false; g.keyRight = false; g.keyJump = false;
+        g.Update(0.016f);
+        Eq(g.lives, livesBefore - 1, "坠亡扣一条命");
+        Eq(g.deaths, deathsBefore + 1, "坠亡记一次死亡");
+        Eq((int)g.player.x, g.level.startX, "坠亡后重生到关卡起点 x");
+        Eq((int)g.player.y, g.level.startY, "坠亡后重生到关卡起点 y");
+        Eq(g.player.hp, 3, "重生后血量回满");
+        Eq(g.screen, 1, "还有命就继续玩");
+        // 重生后晶片恢复（关卡重来）。
+        int taken = 0;
+        for (int i = 0; i < g.shards.Count; i = i + 1) {
+            if (g.shards[i].taken) { taken = taken + 1; }
+        }
+        Eq(taken, 0, "重生后晶片全部恢复");
+
+        // 血量归零：同样扣命。
+        PlatformerGame g2 = NewGame();
+        g2.player.hp = 1;
+        PlatformerEnemy e2 = g2.enemies[0];
+        g2.player.x = e2.x + 10.0f;
+        g2.player.y = (float)(PlatformerLevel.GroundY - PlatformerPlayer.H);
+        g2.player.vy = 0.0f;
+        g2.keyLeft = false; g2.keyRight = false; g2.keyJump = false;
+        g2.Update(0.016f);
+        Eq(g2.lives, PlatformerGame.MaxLives - 1, "血空也扣一条命");
+        Eq(g2.deaths, 1, "血空记一次死亡");
+
+        // 三条命耗尽 → 结算。
+        PlatformerGame g3 = NewGame();
+        for (int i = 0; i < PlatformerGame.MaxLives; i = i + 1) {
+            g3.player.y = (float)PlatformerLevel.DeathY + 10.0f;
+            g3.player.vy = 500.0f;
+            g3.keyLeft = false; g3.keyRight = false; g3.keyJump = false;
+            g3.Update(0.016f);
+        }
+        Eq(g3.lives, 0, "三条命耗尽");
+        Eq(g3.screen, 2, "三条命耗尽进结算画面");
+        Eq(g3.deaths, PlatformerGame.MaxLives, "累计死亡 3 次");
+    }
+
+    // ---- 关卡推进与结算 -------------------------------------------------
+
+    static void TestLevelFlow() {
+        PlatformerGame g = NewGame();
+        Eq(g.levelIndex, 0, "开局在第 1 关");
+        Eq(g.screen, 1, "开局在游戏中");
+        string name0 = g.level.name;
+
+        // 走到旗子 = 通关，进入第 2 关。
+        g.player.x = (float)(g.level.exitX - 4);
+        g.keyLeft = false; g.keyRight = false; g.keyJump = false;
+        g.Update(0.016f);
+        Eq(g.levelIndex, 1, "通关后进入第 2 关");
+        Ok(g.level.name != name0, "第 2 关名字不同");
+        Ok(g.level.exitX > 0, "第 2 关有出口旗");
+        Eq(g.clears, 1, "通关数 +1");
+        Ok(g.events.Contains("clear"), "通关触发 clear 事件");
+
+        // 再通两关 → 结算。
+        g.player.x = (float)(g.level.exitX - 4);
+        g.Update(0.016f);
+        Eq(g.levelIndex, 2, "通关后进入第 3 关");
+        g.player.x = (float)(g.level.exitX - 4);
+        g.Update(0.016f);
+        Eq(g.screen, 2, "第三关通关后进结算");
+        Eq(g.clears, 3, "三关全通");
+        Eq(g.levelIndex, 2, "结算时停在第三关");
+        Ok(g.bestLevelTimeMs >= 0, "记录了单关用时");
+        Ok(g.score >= 300, "三关通关分数不少于 300 score=" + Convert.ToString(g.score));
+    }
+
+    // ---- 存档 -----------------------------------------------------------
+
+    static void TestSave() {
+        string dir = Environment.GetEnvironmentVariable("PLATFORMER_SAVE");
+        if (dir == "") { dir = Directory.GetCurrentDirectory(); }
+        Directory.CreateDirectory(dir);
+        GameSaveStore store = new GameSaveStore(dir, "platformer_case", 1);
+        JsonValue data = JsonValue.NewObject();
+        data.PutInt("level", 3);
+        data.PutInt("clears", 7);
+        data.PutInt("bestTime", 12345);
+        data.PutInt("score", 8888);
+        store.Save(0, data);
+        JsonValue back = store.Load(0);
+        Ok(back != null, "存档能读回来");
+        if (back != null) {
+            Eq(back.Int("level", 0), 3, "读回最远关卡");
+            Eq(back.Int("clears", 0), 7, "读回累计通关数");
+            Eq(back.Int("bestTime", 0), 12345, "读回最佳单关用时");
+            Eq(back.Int("score", 0), 8888, "读回总分");
+        }
+        // 外壳的累计接口。
+        GameShell shell = new GameShell();
+        shell.RecordLevel(3);
+        shell.RecordClear(12345);
+        shell.RecordClear(20000);
+        shell.AddScore(500);
+        Eq(shell.Level(), 3, "外壳记录最远关卡");
+        Eq(shell.Clears(), 2, "外壳累计通关数");
+        Eq(shell.BestTime(), 12345, "外壳保留最佳单关用时（更慢的不覆盖）");
+        Eq(shell.Score(), 500, "外壳累计总分");
+        shell.RecordLevel(1);
+        Eq(shell.Level(), 3, "最远关卡只增不减");
+    }
+
+    // ---- 三个随机种子的完整流程 -----------------------------------------
+
+    static void TestSeeds() {
+        long[] seeds = new long[] { 20261021L, 777777L, 31415926L };
+        for (int s = 0; s < seeds.Length; s = s + 1) {
+            Rng rng = Rng.Seed(seeds[s]);
+            PlatformerGame g = NewGame();
+            int frames = 0;
+            bool ended = false;
+            while (frames < 8000 && g.screen == 1) {
+                // 机器人：一直往右走，随机起跳（用种子驱动）。
+                g.keyLeft = rng.Next() % 100 < 8;
+                g.keyRight = !g.keyLeft;
+                g.keyJump = (rng.Next() % 100) < 6;
+                g.Update(0.016f);
+                frames = frames + 1;
+            }
+            ended = g.screen == 2;
+            Ok(ended, "种子 " + Convert.ToString(seeds[s]) + " 的流程能走到结算 frames="
+                + Convert.ToString(frames));
+            // 状态自洽。
+            Ok(g.screen >= 0 && g.screen <= 2, "画面状态合法");
+            Ok(g.lives >= 0 && g.lives <= PlatformerGame.MaxLives, "命数合法 lives="
+                + Convert.ToString(g.lives));
+            Ok(g.levelIndex >= 0 && g.levelIndex < PlatformerGame.LevelCount, "关卡下标合法");
+            Ok(g.coins >= 0 && g.coins <= 40, "晶片数合法 coins=" + Convert.ToString(g.coins));
+            Ok(g.score >= 0, "分数非负");
+            Ok(g.deaths >= 0 && g.deaths <= PlatformerGame.MaxLives, "死亡数合法");
+            Ok(g.player.x >= 0.0f, "玩家 x 合法");
+            Ok(g.player.y < 2000.0f, "玩家 y 合法");
+            Ok(g.events.Count < 1000, "事件队列没有堆积");
+        }
+    }
+
+    static void Main() {
+        TestLevels();
+        TestGravityAndLanding();
+        TestJump();
+        TestMovement();
+        TestEnemy();
+        TestShards();
+        TestDeath();
+        TestLevelFlow();
+        TestSave();
+        TestSeeds();
+        Console.WriteLine("platformer_test checks=" + Convert.ToString(checks)
+            + " failures=" + Convert.ToString(failures));
+        if (failures > 0) {
+            Console.WriteLine("platformer_test FAILED");
+            return;
+        }
+        Console.WriteLine("platformer_test OK");
+    }
+}

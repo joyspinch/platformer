@@ -1,36 +1,58 @@
-# 雪线跳跃 无头冒烟：编译后在 UiDriver 下跑几帧再退出。
+# 跃迁山谷 · PLATFORMER 无头测试：三段。
 #
-# 判据：exe 编译得过、帧循环不崩、PLATFORMER 冒烟标记能让程序跑满若干帧
-# 自行退出（顺带验证资源查找路径通不通）。GUI 游戏没有断言式用例套件，
-# 这里以"进程按脚本正常退出 + 输出冒烟标记"为通过条件。
+#   1) platformer_test_OK            —— 玩法断言用例（重力/落地/二段跳/加速
+#                                       摩擦/踩敌/撞敌/晶片/坠亡重生/三关
+#                                       推进/结算/存档/三种子完整流程）
+#   2) platformer_SAVE_OK runs=1 -> runs=2 —— 存档写两遍读得到
+#   3) platformer_SMOKE_OK            —— 无头冒烟跑满帧自行退出
 #
-# 另外跑**两遍**：第一遍写出存档（局数 1），第二遍是新进程，必须读回
-# 第一遍写的档（局数 2）——证明存档真的落盘、真的读得回来。
+# 存档落在临时目录里，不碰玩家机器上的 %LOCALAPPDATA%/Platformer。
 param(
     [string]$Compiler = $env:ZANC,
     [string]$PackageProject = '',
-    [int]$TimeoutSeconds = 90
+    [int]$TimeoutSeconds = 120
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 $repo = Split-Path -Parent $project
-if (-not $Compiler) {
-    $local = if ($env:ZAN_HOME) { Join-Path $env:ZAN_HOME 'build/zanc.exe' } else { '' }
-    if ($local -and (Test-Path $local)) { $Compiler = $local } else { $Compiler = (Get-Command zanc -ErrorAction Stop).Source }
+. (Join-Path $PSScriptRoot 'zanc.ps1')
+if (-not $PackageProject) {
+    if ($env:ZAN_HOME) { $PackageProject = $env:ZAN_HOME }
+    else { throw '需要 -PackageProject 指向 zan-lang 仓库（公共包在它的 packages/ 下）' }
 }
-if (-not $PackageProject) { if ($env:ZAN_HOME) { $PackageProject = $env:ZAN_HOME } else { throw '需要 $env:ZAN_HOME 指向 zan-lang 仓库（公共包在它的 packages/ 下）' } }
+if (-not $Compiler) { $Compiler = Resolve-ZanCompiler -PackageProject $PackageProject }
 $out = Join-Path $repo 'build/platformer'
 & (Join-Path $PSScriptRoot 'build.ps1') -Compiler $Compiler -PackageProject $PackageProject -Output $out
 $exe = Join-Path $out 'Platformer.exe'
 if (-not (Test-Path $exe)) { throw "缺少可执行文件：$exe" }
-# 存档落在临时目录里，不碰玩家机器上的 %LOCALAPPDATA%/Platformer。
+
+# --- 第一段：玩法断言用例 ---
+# 源码要排除 main.zan（它带 Main()，用例自己的 Main 才是入口）。
+$caseSources = @(Get-ChildItem (Join-Path $project 'src') -Recurse -File -Filter *.zan |
+    Where-Object { $_.Name -ne 'main.zan' } |
+    Sort-Object FullName | ForEach-Object { $_.FullName })
+$case = 'platformer_test.zan'
+$stem = [IO.Path]::GetFileNameWithoutExtension($case)
+$caseExe = Join-Path $out "$stem.exe"
+& $Compiler (@((Join-Path $project "tests/$case")) + $caseSources +
+    @('--auto-stdlib', '--package-project', $PackageProject, '-o', $caseExe))
+if ($LASTEXITCODE -ne 0) { throw "玩法用例编译失败：$case (zanc=$LASTEXITCODE)" }
 $saveDir = Join-Path $out 'savetest'
 if (Test-Path $saveDir) { Remove-Item $saveDir -Recurse -Force }
 New-Item -ItemType Directory -Force $saveDir | Out-Null
 $env:PLATFORMER_SAVE = $saveDir
-# 冒烟标记：跑满 N 帧后程序自行退出（不走 UiDriver 脚本，避免桌面事件污染）
+$caseOut = & $caseExe 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) { throw "玩法用例失败：$case`n$caseOut" }
+if ($caseOut -notmatch "$stem OK") { throw "玩法用例输出不对：$case`n$caseOut" }
+Write-Host ($caseOut.Trim())
+Write-Host "${stem}_OK"
+
+# --- 第二段与第三段：无头冒烟（跑两遍，验证存档往返） ---
+# 冒烟标记：跑满 N 帧后程序自行退出（不走 UiDriver 脚本，避免桌面事件污染）。
+# 演示模式：跳过菜单直接进关卡并自动操作，冒烟才真的跑到玩法上。
 $env:PLATFORMER_SMOKE = '1'
-$env:PLATFORMER_FRAMES = '90'
+$env:PLATFORMER_FRAMES = '180'
+$env:PLATFORMER_DEMO = '1'
 $log = Join-Path $out 'platformer_smoke.log'
 if (Test-Path $log) { Remove-Item $log -Force }
 $proc = Start-Process -FilePath $exe -WorkingDirectory $out -PassThru -WindowStyle Hidden `

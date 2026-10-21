@@ -1,0 +1,23 @@
+using System;
+
+// 晶片 Shard：关卡里的金币。碰到就收集，加分并触发音效。
+public class PlatformerShard {
+    public const int W = 28;
+    public const int H = 36;
+
+    public float x;
+    public float y;
+    public bool taken;
+
+    public PlatformerShard(float x, float y) {
+        this.x = x;
+        this.y = y;
+        this.taken = false;
+    }
+
+    // 是否与玩家相交。
+    public bool Overlaps(PlatformerPlayer p) {
+        return p.x < this.x + (float)PlatformerShard.W && p.x + (float)PlatformerPlayer.W > this.x
+            && p.y < this.y + (float)PlatformerShard.H && p.y + (float)PlatformerPlayer.H > this.y;
+    }
+}

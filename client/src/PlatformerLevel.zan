@@ -1,0 +1,182 @@
+using System;
+using System.Collections.Generic;
+
+// 实心平台：既是碰撞体，也是贴图来源。
+// 地面段是 200 像素高的厚块（掉进缺口就是掉出屏幕底），
+// 浮空平台是 24 像素高的板子（从上方落下能站住）。
+public class PlatformerSolid {
+    public int x;
+    public int y;
+    public int w;
+    public int h;
+
+    public PlatformerSolid(int x, int y, int w, int h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+    }
+}
+
+// 关卡数据：一段地形 + 若干巡逻兵 + 若干晶片 + 起点与出口旗。
+//
+// 坐标：世界坐标，x 向右增大，y 向下增大。地面顶在 y=600，
+// 掉到 y=780 以下算坠亡。关卡宽 2400~2800，相机在 0..(宽-1280) 滚动。
+public class PlatformerLevel {
+    public const int GroundY = 600;
+    public const int DeathY = 780;
+    public const int PlayerW = 36;
+    public const int PlayerH = 50;
+
+    public int index;
+    public string name;
+    public int width;
+    public List<PlatformerSolid> solids;
+    public List<PlatformerEnemy> enemies;
+    public List<PlatformerShard> shards;
+    public int startX;
+    public int startY;
+    public int exitX;
+
+    public PlatformerLevel() {
+        this.solids = new List<PlatformerSolid>();
+        this.enemies = new List<PlatformerEnemy>();
+        this.shards = new List<PlatformerShard>();
+        this.startX = 80;
+        this.startY = PlatformerLevel.GroundY - PlatformerLevel.PlayerH;
+        this.exitX = 0;
+        this.width = 0;
+        this.name = "";
+    }
+
+    // 地面段（缺口 = 坠亡陷阱）。
+    public void AddGround(int x, int w) {
+        this.solids.Add(new PlatformerSolid(x, PlatformerLevel.GroundY, w, 200));
+    }
+
+    // 浮空平台。
+    public void AddPlatform(int x, int y, int w) {
+        this.solids.Add(new PlatformerSolid(x, y, w, 24));
+    }
+
+    // 巡逻兵：在 [minX, maxX] 之间来回走，y 是它的顶（贴着平台面）。
+    public void AddDrone(int x, int y, int minX, int maxX) {
+        this.enemies.Add(new PlatformerEnemy((float)x, (float)y, (float)minX, (float)maxX));
+    }
+
+    // 晶片（金币）。
+    public void AddShard(int x, int y) {
+        this.shards.Add(new PlatformerShard((float)x, (float)y));
+    }
+
+    // 三张关卡：地形、敌人、晶片分布各不相同。
+    public static PlatformerLevel Build(int index) {
+        PlatformerLevel lv = new PlatformerLevel();
+        lv.index = index;
+        if (index == 0) {
+            lv.name = "苔谷浅滩";
+            lv.width = 2400;
+            lv.AddGround(0, 560);
+            lv.AddGround(700, 520);
+            lv.AddGround(1330, 620);
+            lv.AddGround(2050, 350);
+            lv.AddPlatform(600, 500, 120);
+            lv.AddPlatform(820, 440, 140);
+            lv.AddPlatform(1060, 500, 130);
+            lv.AddPlatform(1250, 455, 120);
+            lv.AddPlatform(1450, 400, 150);
+            lv.AddPlatform(1660, 470, 130);
+            lv.AddPlatform(1900, 420, 120);
+            lv.AddPlatform(2140, 500, 150);
+            lv.AddDrone(760, 564, 720, 1180);
+            lv.AddDrone(830, 404, 830, 940);
+            lv.AddDrone(1400, 564, 1350, 1900);
+            lv.AddDrone(1460, 364, 1460, 1590);
+            lv.AddShard(620, 452);
+            lv.AddShard(840, 392);
+            lv.AddShard(1090, 452);
+            lv.AddShard(1270, 407);
+            lv.AddShard(1470, 352);
+            lv.AddShard(1680, 422);
+            lv.AddShard(1930, 372);
+            lv.AddShard(2170, 452);
+            lv.exitX = 2340;
+        } else if (index == 1) {
+            lv.name = "熔痕裂谷";
+            lv.width = 2600;
+            lv.AddGround(0, 420);
+            lv.AddGround(560, 420);
+            lv.AddGround(1120, 500);
+            lv.AddGround(1780, 420);
+            lv.AddGround(2320, 280);
+            lv.AddPlatform(440, 470, 120);
+            lv.AddPlatform(700, 420, 140);
+            lv.AddPlatform(980, 480, 120);
+            lv.AddPlatform(1180, 400, 160);
+            lv.AddPlatform(1400, 470, 120);
+            lv.AddPlatform(1560, 390, 140);
+            lv.AddPlatform(1860, 450, 140);
+            lv.AddPlatform(2100, 410, 130);
+            lv.AddPlatform(2280, 480, 120);
+            lv.AddDrone(580, 564, 580, 940);
+            lv.AddDrone(760, 384, 760, 830);
+            lv.AddDrone(1200, 564, 1200, 1580);
+            lv.AddDrone(1420, 434, 1420, 1510);
+            lv.AddDrone(1620, 354, 1620, 1690);
+            lv.AddDrone(1900, 564, 1900, 2160);
+            lv.AddDrone(2140, 374, 2140, 2220);
+            lv.AddShard(450, 422);
+            lv.AddShard(710, 372);
+            lv.AddShard(990, 432);
+            lv.AddShard(1190, 352);
+            lv.AddShard(1410, 422);
+            lv.AddShard(1580, 342);
+            lv.AddShard(1880, 402);
+            lv.AddShard(2120, 362);
+            lv.AddShard(2300, 432);
+            lv.exitX = 2560;
+        } else {
+            lv.name = "霜夜尖塔";
+            lv.width = 2800;
+            lv.AddGround(0, 380);
+            lv.AddGround(520, 380);
+            lv.AddGround(1040, 460);
+            lv.AddGround(1660, 420);
+            lv.AddGround(2240, 560);
+            lv.AddPlatform(400, 470, 120);
+            lv.AddPlatform(660, 420, 140);
+            lv.AddPlatform(900, 370, 140);
+            lv.AddPlatform(1140, 450, 130);
+            lv.AddPlatform(1300, 380, 150);
+            lv.AddPlatform(1480, 310, 140);
+            lv.AddPlatform(1660, 460, 120);
+            lv.AddPlatform(1900, 380, 140);
+            lv.AddPlatform(2100, 450, 120);
+            lv.AddPlatform(2320, 380, 150);
+            lv.AddPlatform(2520, 460, 140);
+            lv.AddDrone(540, 564, 540, 880);
+            lv.AddDrone(680, 384, 680, 790);
+            lv.AddDrone(920, 334, 920, 1030);
+            lv.AddDrone(1160, 564, 1160, 1480);
+            lv.AddDrone(1320, 344, 1320, 1440);
+            lv.AddDrone(1500, 274, 1500, 1610);
+            lv.AddDrone(1700, 564, 1700, 2060);
+            lv.AddDrone(1920, 344, 1920, 2030);
+            lv.AddDrone(2140, 414, 2140, 2210);
+            lv.AddDrone(2340, 344, 2340, 2460);
+            lv.AddShard(410, 422);
+            lv.AddShard(670, 372);
+            lv.AddShard(910, 322);
+            lv.AddShard(1150, 402);
+            lv.AddShard(1310, 332);
+            lv.AddShard(1490, 262);
+            lv.AddShard(1680, 412);
+            lv.AddShard(1910, 332);
+            lv.AddShard(2110, 402);
+            lv.AddShard(2330, 332);
+            lv.AddShard(2530, 412);
+            lv.exitX = 2760;
+        }
+        return lv;
+    }
+}

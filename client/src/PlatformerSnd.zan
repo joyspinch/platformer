@@ -1,0 +1,39 @@
+using System;
+using Game.Foundation;
+using Game.Kit;
+
+// 音效库：加载 assets/sfx/*.wav，按事件名播放。
+//
+// 没有音频设备（无头 CI / 没声卡）时整个库静默失效——
+// 游戏照常跑，不崩不卡（公共包 SfxBank 保证）。
+public class PlatformerSnd {
+    AudioBus bus;
+    SfxBank bank;
+    public int loaded;
+
+    public PlatformerSnd() {
+        this.bus = new AudioBus();
+        this.bank = new SfxBank(this.bus);
+        string[] names = new string[] {
+            "jump", "land", "shard", "stomp", "hurt", "die", "clear", "over"
+        };
+        this.bank.LoadAll("assets/sfx", names);
+        this.loaded = this.bank.Count();
+    }
+
+    // 播放一个音效（名字不在库里就是空操作）。
+    public void Play(string name) {
+        if (this.bank == null || name == null) { return; }
+        this.bank.Play(name);
+    }
+
+    // 推进音效冷却计时。
+    public void Update(int deltaMs) {
+        if (this.bus != null) { this.bus.Update(deltaMs); }
+    }
+
+    // 释放采样（退出时用）。
+    public void Dispose() {
+        if (this.bank != null) { this.bank.Dispose(); }
+    }
+}

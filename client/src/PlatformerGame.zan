@@ -1,0 +1,230 @@
+using System;
+using System.Collections.Generic;
+
+// 跃迁山谷 · PLATFORMER 的玩法状态机。
+//
+// 三个画面：0=菜单 1=游戏中 2=结算。玩法循环：
+//   输入（A/D 横移 + 空格跳/二段跳）→ 物理与碰撞 → 拾取晶片 / 踩敌 / 受伤
+//   → 到达出口旗通关下一关 → 三关打通进结算；坠亡或血空则扣命重生，
+//   三条命耗尽也进结算。
+//
+// 这一层是纯逻辑（不碰画布），所以玩法断言用例可以直接跑它；
+// 画面在 PlatformerView，音效在 PlatformerSnd。
+public class PlatformerGame {
+    public const int LevelCount = 3;
+    public const int MaxLives = 3;
+
+    public int screen;              // 0=菜单 1=游戏中 2=结算
+    public int levelIndex;
+    public PlatformerLevel level;
+    public PlatformerPlayer player;
+    public List<PlatformerEnemy> enemies;
+    public List<PlatformerShard> shards;
+    public int lives;
+    public int deaths;
+    public int coins;               // 本局累计晶片
+    public int levelShards;         // 当前关卡已收集
+    public int clears;              // 本局通关数
+    public int score;
+    public float levelTimeMs;
+    public float totalTimeMs;
+    public int bestLevelTimeMs;     // 本局最佳单关用时
+    public float camX;
+    public List<string> events;     // 本帧发生的事件（音效由上层消费）
+    public GameShell shell;
+    public bool keyLeft;
+    public bool keyRight;
+    public bool keyJump;
+    public bool demoMode;
+    public int demoTimer;
+    public bool scoreFlushed;
+
+    public PlatformerGame(GameShell shell) {
+        this.shell = shell;
+        this.events = new List<string>();
+        this.enemies = new List<PlatformerEnemy>();
+        this.shards = new List<PlatformerShard>();
+        this.player = new PlatformerPlayer();
+        this.screen = 0;
+        this.lives = PlatformerGame.MaxLives;
+        this.levelIndex = 0;
+        this.level = PlatformerLevel.Build(0);
+    }
+
+    // 开一局：从第一关开始，三条命。
+    public void StartRun() {
+        this.lives = PlatformerGame.MaxLives;
+        this.deaths = 0;
+        this.coins = 0;
+        this.clears = 0;
+        this.score = 0;
+        this.totalTimeMs = 0.0f;
+        this.bestLevelTimeMs = 0;
+        this.scoreFlushed = false;
+        this.levelIndex = 0;
+        this.LoadLevel(0);
+        this.screen = 1;
+    }
+
+    // 载入一关：地形、敌人、晶片全部重置，玩家回到起点。
+    public void LoadLevel(int index) {
+        this.levelIndex = index;
+        this.level = PlatformerLevel.Build(index);
+        this.enemies = new List<PlatformerEnemy>();
+        for (int i = 0; i < this.level.enemies.Count; i = i + 1) {
+            this.enemies.Add(this.level.enemies[i]);
+        }
+        this.shards = new List<PlatformerShard>();
+        for (int i = 0; i < this.level.shards.Count; i = i + 1) {
+            this.shards.Add(this.level.shards[i]);
+        }
+        this.player.ApplyDifficulty(this.Difficulty());
+        this.player.Reset(this.level);
+        this.levelShards = 0;
+        this.levelTimeMs = 0.0f;
+        this.camX = 0.0f;
+    }
+
+    // 难度档（设置浮层里改）。
+    public int Difficulty() {
+        if (this.shell == null) { return 2; }
+        return this.shell.Difficulty();
+    }
+
+    // ---- 输入 ---------------------------------------------------------
+
+    // 按键按下：方向键是持续状态，空格/上/W 是跳跃沿信号。
+    public void OnKeyDown(int code) {
+        if (code == 65 || code == 37) { this.keyLeft = true; return; }
+        if (code == 68 || code == 39) { this.keyRight = true; return; }
+        if (code == 32 || code == 87 || code == 38) { this.keyJump = true; return; }
+    }
+
+    // 按键抬起。
+    public void OnKeyUp(int code) {
+        if (code == 65 || code == 37) { this.keyLeft = false; return; }
+        if (code == 68 || code == 39) { this.keyRight = false; return; }
+        if (code == 32 || code == 87 || code == 38) { this.keyJump = false; return; }
+    }
+
+    // ---- 主循环 -------------------------------------------------------
+
+    // 推进一帧玩法。
+    public void Update(float dt) {
+        if (this.screen != 1) { return; }
+        if (dt <= 0.0f) { return; }
+        this.levelTimeMs = this.levelTimeMs + dt * 1000.0f;
+        this.totalTimeMs = this.totalTimeMs + dt * 1000.0f;
+
+        // 演示模式：自动向右走 + 周期性起跳（截图与无头验收用）。
+        if (this.demoMode) {
+            this.keyRight = true;
+            this.demoTimer = this.demoTimer + 1;
+            if (this.demoTimer % 32 == 0) { this.keyJump = true; }
+        }
+
+        // 玩家物理。
+        this.player.Update(dt, this.level, this.keyLeft, this.keyRight, this.keyJump);
+        this.keyJump = false;
+        if (this.player.jumped) { this.events.Add("jump"); }
+        if (this.player.landed) { this.events.Add("land"); }
+
+        // 敌人巡逻 + 踩/撞判定。
+        for (int i = 0; i < this.enemies.Count; i = i + 1) {
+            PlatformerEnemy e = this.enemies[i];
+            if (!e.alive) { continue; }
+            e.Update(dt);
+            if (this.player.Invincible()) { continue; }
+            if (!e.Overlaps(this.player)) { continue; }
+            bool stomp = this.player.vy > 0.0f
+                && (this.player.y + (float)PlatformerPlayer.H) <= e.y + 14.0f;
+            if (stomp) {
+                e.alive = false;
+                this.player.vy = -520.0f;
+                this.player.onGround = false;
+                this.player.jumpsLeft = 1;
+                this.score = this.score + 25;
+                this.events.Add("stomp");
+            } else {
+                this.player.hp = this.player.hp - 1;
+                this.player.invuln = 1.0f;
+                this.player.vx = -this.player.vx * 0.5f;
+                this.events.Add("hurt");
+                if (this.player.hp <= 0) { this.Die(); return; }
+            }
+        }
+
+        // 晶片拾取。
+        for (int i = 0; i < this.shards.Count; i = i + 1) {
+            PlatformerShard s = this.shards[i];
+            if (s.taken) { continue; }
+            if (!s.Overlaps(this.player)) { continue; }
+            s.taken = true;
+            this.coins = this.coins + 1;
+            this.levelShards = this.levelShards + 1;
+            this.score = this.score + 10;
+            this.events.Add("shard");
+        }
+
+        // 到达出口旗 = 通关本关。
+        if (this.player.x + (float)PlatformerPlayer.W >= (float)this.level.exitX) {
+            this.ClearLevel();
+            return;
+        }
+
+        // 掉出屏幕底部 = 坠亡。
+        if (this.player.y > (float)PlatformerLevel.DeathY) {
+            this.Die();
+            return;
+        }
+
+        // 相机跟随玩家（水平方向）。
+        float maxCam = (float)(this.level.width - PlatformerView.DesignW);
+        if (maxCam < 0.0f) { maxCam = 0.0f; }
+        float target = this.player.x - 480.0f;
+        if (target < 0.0f) { target = 0.0f; }
+        if (target > maxCam) { target = maxCam; }
+        this.camX = target;
+    }
+
+    // 坠亡或血空：扣一条命，重生到当前关卡起点；命用完进结算。
+    public void Die() {
+        this.deaths = this.deaths + 1;
+        this.lives = this.lives - 1;
+        this.events.Add("die");
+        if (this.lives <= 0) {
+            this.screen = 2;
+            this.events.Add("over");
+            this.FlushSave();
+            return;
+        }
+        this.LoadLevel(this.levelIndex);
+    }
+
+    // 通关：记一次通关，通关最后一关进结算，否则进下一关。
+    public void ClearLevel() {
+        this.clears = this.clears + 1;
+        this.events.Add("clear");
+        int ms = (int)this.levelTimeMs;
+        if (this.bestLevelTimeMs == 0 || ms < this.bestLevelTimeMs) { this.bestLevelTimeMs = ms; }
+        this.score = this.score + 100;
+        if (this.shell != null) { this.shell.RecordClear(ms); }
+        if (this.levelIndex >= PlatformerGame.LevelCount - 1) {
+            this.screen = 2;
+            this.events.Add("over");
+            this.FlushSave();
+            return;
+        }
+        this.LoadLevel(this.levelIndex + 1);
+    }
+
+    // 把本局的成绩写进存档（结算与退出时各调一次，分数只记一遍）。
+    public void FlushSave() {
+        if (this.shell == null) { return; }
+        this.shell.RecordLevel(this.levelIndex + 1);
+        if (!this.scoreFlushed) {
+            this.shell.AddScore(this.score);
+            this.scoreFlushed = true;
+        }
+    }
+}

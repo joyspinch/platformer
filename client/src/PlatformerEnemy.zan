@@ -1,0 +1,50 @@
+using System;
+
+// 巡逻兵 Drone：沿平台面来回走，碰到玩家扣血，
+// 被"踩"（下落速度 > 0 且脚底命中头顶）会死并把玩家弹起来。
+public class PlatformerEnemy {
+    public const int W = 44;
+    public const int H = 38;
+
+    public float x;
+    public float y;
+    public float vx;
+    public float minX;
+    public float maxX;
+    public float speed;
+    public bool alive;
+    public bool facingRight;
+
+    public PlatformerEnemy(float x, float y, float minX, float maxX) {
+        this.x = x;
+        this.y = y;
+        this.minX = minX;
+        this.maxX = maxX;
+        this.speed = 70.0f;
+        this.vx = this.speed;
+        this.alive = true;
+        this.facingRight = true;
+    }
+
+    // 巡逻一步；到边界折返。
+    public void Update(float dt) {
+        if (!this.alive) { return; }
+        this.x = this.x + this.vx * dt;
+        if (this.x <= this.minX) {
+            this.x = this.minX;
+            this.vx = -this.speed;
+            this.facingRight = false;
+        }
+        if (this.x >= this.maxX) {
+            this.x = this.maxX;
+            this.vx = -this.speed;
+            this.facingRight = true;
+        }
+    }
+
+    // 是否与玩家相交。
+    public bool Overlaps(PlatformerPlayer p) {
+        return p.x < this.x + (float)PlatformerEnemy.W && p.x + (float)PlatformerPlayer.W > this.x
+            && p.y < this.y + (float)PlatformerEnemy.H && p.y + (float)PlatformerPlayer.H > this.y;
+    }
+}

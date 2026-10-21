@@ -1,0 +1,272 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Gui;
+using Game.Kit;
+
+// 画面层：视差背景、地形贴图、角色/敌人/晶片位图、HUD、菜单与结算面板。
+//
+// 贴图来源走 Game.Kit.Assets.Find（磁盘优先）→ 找不到再退回内嵌表
+// （发布后资源在 exe 里），再找不到就走纯色绘制，绝不崩。
+public class PlatformerView {
+    public const int DesignW = 1280;
+    public const int DesignH = 720;
+    // 中景层（远山与松树）的顶边：树冠从这条线往下长。
+    public const int MidLayerY = 150;
+
+    public string bgFar = "";
+    public string bgMid = "";
+    public string bgNear = "";
+    public string playerKey = "";
+    public string droneKey = "";
+    public string shardKey = "";
+    public string tileKey = "";
+    public string flagKey = "";
+    public string panelKey = "";
+    public bool assetsReady;
+
+    // 载入全部贴图。
+    public void LoadAssets() {
+        this.bgFar = PlatformerView.Asset("assets/bg_far.png");
+        this.bgMid = PlatformerView.Asset("assets/bg_mid.png");
+        this.bgNear = PlatformerView.Asset("assets/bg_near.png");
+        this.playerKey = PlatformerView.Asset("assets/player.png");
+        this.droneKey = PlatformerView.Asset("assets/drone.png");
+        this.shardKey = PlatformerView.Asset("assets/shard.png");
+        this.tileKey = PlatformerView.Asset("assets/tile_ground.png");
+        this.flagKey = PlatformerView.Asset("assets/flag.png");
+        this.panelKey = PlatformerView.Asset("assets/hud_panel.png");
+        this.assetsReady = this.playerKey != "" && this.droneKey != "" && this.shardKey != "";
+    }
+
+    // 磁盘优先 → 内嵌兜底 → 空串（调用方走纯色兜底）。
+    static string Asset(string rel) {
+        string p = Assets.Find(rel);
+        if (p != null && p != "" && File.Exists(p)) { return p; }
+        try {
+            if (File.EmbedExists(rel)) {
+                byte[] b = File.ReadAllBytes(rel);
+                string key = "mem:" + rel;
+                Canvas.ImageLoadMem(key, b, b.Length);
+                return key;
+            }
+        } catch (Exception) {
+        }
+        return "";
+    }
+
+    // ---- 视差背景 -----------------------------------------------------
+
+    // 一层视差：裁源矩形取景，随相机按 factor 速度滚动。
+    // 取景窗口取源图宽的 3/4（留出 1/4 的滚动余量），源矩形按同一比例
+    // 缩到设计宽度——不靠平移两张拼接，免得有竖缝。
+    // destY：层的顶边（逻辑像素）；传 -1 表示底边对齐地面线。
+    void DrawLayer(Canvas c, string key, int cam, float factor, int destY) {
+        if (key == null || key == "") { return; }
+        int iw = Canvas.ImageWidth(key);
+        int ih = Canvas.ImageHeight(key);
+        if (iw <= 1 || ih <= 0) { return; }
+        int sw = iw * 3 / 4;
+        if (sw < 1) { sw = 1; }
+        int sh = ih;
+        int maxSx = iw - sw;
+        if (maxSx < 0) { maxSx = 0; }
+        int sx = (int)((float)cam * factor * (float)sw / (float)PlatformerView.DesignW);
+        if (sx > maxSx) { sx = maxSx; }
+        if (sx < 0) { sx = 0; }
+        int destH = PlatformerView.DesignW * sh / sw;
+        int y = destY;
+        if (y < 0) { y = PlatformerLevel.GroundY - destH; }
+        PlatformerPaint.BlitSrc(c, key, 0, y, PlatformerView.DesignW, destH, sx, 0, sw, sh);
+    }
+
+    // ---- 游戏画面 -----------------------------------------------------
+
+    public void DrawGame(Canvas c, PlatformerGame g, int w, int h) {
+        int cam = (int)g.camX;
+        // 底色（视差层之间的天）。
+        PlatformerPaint.Fill(c, 0, 0, w, h, 0xFF10182C);
+        this.DrawLayer(c, this.bgFar, cam, 0.10f, 0);
+        this.DrawLayer(c, this.bgMid, cam, 0.20f, PlatformerView.MidLayerY);
+        this.DrawLayer(c, this.bgNear, cam, 0.30f, -1);
+        // 地面线以下的深渊（缺口掉下去就是掉进这里）。
+        PlatformerPaint.Fill(c, 0, PlatformerLevel.GroundY, w, h - PlatformerLevel.GroundY, 0xFF090E1B);
+        // 地形。
+        for (int i = 0; i < g.level.solids.Count; i = i + 1) {
+            PlatformerSolid s = g.level.solids[i];
+            int sx = s.x - cam;
+            if (sx > w || sx + s.w < 0) { continue; }
+            PlatformerPaint.Fill(c, sx, s.y, s.w, s.h, 0xFF171D28);
+            PlatformerPaint.Fill(c, sx, s.y + 8, s.w, 6, 0xFF39445A);
+            if (this.tileKey != "") {
+                for (int tx = 0; tx < s.w; tx = tx + 64) {
+                    PlatformerPaint.Blit(c, this.tileKey, sx + tx, s.y, 64, 64);
+                }
+            }
+        }
+        // 出口旗。
+        int flagX = g.level.exitX - cam - 20;
+        if (flagX > -60 && flagX < w + 60) {
+            if (this.flagKey != "") {
+                PlatformerPaint.Blit(c, this.flagKey, flagX, PlatformerLevel.GroundY - 64, 40, 64);
+            } else {
+                PlatformerPaint.Fill(c, flagX + 18, PlatformerLevel.GroundY - 64, 4, 64, 0xFFD8C88A);
+                PlatformerPaint.Fill(c, flagX + 20, PlatformerLevel.GroundY - 60, 26, 18, 0xFFE0B24A);
+            }
+        }
+        // 晶片。
+        for (int i = 0; i < g.shards.Count; i = i + 1) {
+            PlatformerShard s = g.shards[i];
+            if (s.taken) { continue; }
+            int sx = (int)s.x - cam;
+            if (sx < -40 || sx > w + 40) { continue; }
+            PlatformerPaint.FillCircle(c, sx + 14, (int)s.y + 18, 14, 0x3380F0FF);
+            if (this.shardKey != "") {
+                PlatformerPaint.Blit(c, this.shardKey, sx, (int)s.y, 28, 36);
+            } else {
+                PlatformerPaint.FillRound(c, sx + 7, (int)s.y + 4, 14, 28, 5, 0xFF6FE3FF);
+            }
+        }
+        // 巡逻兵。
+        for (int i = 0; i < g.enemies.Count; i = i + 1) {
+            PlatformerEnemy e = g.enemies[i];
+            if (!e.alive) { continue; }
+            int sx = (int)e.x - cam;
+            if (sx < -60 || sx > w + 60) { continue; }
+            if (this.droneKey != "") {
+                PlatformerPaint.Blit(c, this.droneKey, sx, (int)e.y, 44, 38);
+            } else {
+                PlatformerPaint.FillRound(c, sx, (int)e.y, 44, 38, 14, 0xFF8A2B2B);
+                PlatformerPaint.FillCircle(c, sx + 22, (int)e.y + 19, 6, 0xFFFF4D3D);
+            }
+        }
+        // 玩家（受伤无敌时闪烁）。
+        PlatformerPlayer p = g.player;
+        int px = (int)p.x - cam;
+        bool blink = p.Invincible() && ((g.demoTimer / 3) % 2 == 0);
+        if (!blink) {
+            if (this.playerKey != "") {
+                PlatformerPaint.Blit(c, this.playerKey, px, (int)p.y, 36, 50);
+            } else {
+                PlatformerPaint.FillRound(c, px, (int)p.y, 36, 50, 8, 0xFF2E9C86);
+                PlatformerPaint.Fill(c, px + 6, (int)p.y + 8, 22, 13, 0xFFF2F4F8);
+            }
+        }
+        // HUD。
+        this.DrawHud(c, g, w);
+    }
+
+    // 顶部 HUD：关卡名、生命、晶片、用时、分数。
+    void DrawHud(Canvas c, PlatformerGame g, int w) {
+        if (this.panelKey != "") {
+            PlatformerPaint.Blit(c, this.panelKey, 12, 8, 440, 110);
+        } else {
+            PlatformerPaint.FillRound(c, 12, 8, 440, 110, 10, 0xD0121A2C);
+            PlatformerPaint.Round(c, 12, 8, 440, 110, 10, 0xFF6C7C9A, 2);
+        }
+        PlatformerPaint.Text(c, "第 " + Convert.ToString(g.levelIndex + 1) + " 关 · " + g.level.name,
+            30, 18, 20, 0xFFF2D98A);
+        PlatformerPaint.Text(c, "生命", 30, 50, 15, 0xFFBFCBD8);
+        for (int i = 0; i < g.lives; i = i + 1) {
+            PlatformerPaint.FillRound(c, 74 + i * 24, 48, 18, 18, 5, 0xFFE2554A);
+            PlatformerPaint.FillRound(c, 79 + i * 24, 53, 8, 8, 3, 0xFFFF9E8C);
+        }
+        PlatformerPaint.Text(c, "晶片 " + Convert.ToString(g.coins), 160, 50, 15, 0xFF9FE0C0);
+        PlatformerPaint.Text(c, "用时 " + PlatformerView.Sec(g.totalTimeMs) + "s", 250, 50, 15, 0xFFBFCBD8);
+        PlatformerPaint.Text(c, "分数 " + Convert.ToString(g.score), 344, 50, 15, 0xFFF2D98A);
+        PlatformerPaint.Text(c, "A/D 移动 · 空格跳（空中再按一次 = 二段跳）· Esc 设置",
+            12, h0() - 26, 14, 0xB0C8D8EC);
+    }
+
+    // 画面底部的提示条高度（设计分辨率）。
+    int h0() { return PlatformerView.DesignH; }
+
+    // 秒数格式化（毫秒 → "12.3"）。
+    public static string Sec(float ms) {
+        int tenths = (int)(ms / 100.0f);
+        int whole = tenths / 10;
+        int frac = tenths % 10;
+        return Convert.ToString(whole) + "." + Convert.ToString(frac);
+    }
+
+    // ---- 菜单 ---------------------------------------------------------
+
+    public void DrawMenu(Canvas c, int w, int h, GameShell shell) {
+        PlatformerPaint.Fill(c, 0, 0, w, h, 0xFF10182C);
+        this.DrawLayer(c, this.bgFar, 0, 0.10f, 0);
+        this.DrawLayer(c, this.bgMid, 140, 0.20f, PlatformerView.MidLayerY);
+        this.DrawLayer(c, this.bgNear, 320, 0.30f, -1);
+        PlatformerPaint.Fill(c, 0, PlatformerLevel.GroundY, w, h - PlatformerLevel.GroundY, 0xFF090E1B);
+        // 舞台上摆三个位图主角（菜单也看得见美术）。
+        if (this.playerKey != "") {
+            PlatformerPaint.Blit(c, this.playerKey, 120, PlatformerLevel.GroundY - 50, 36, 50);
+        }
+        if (this.droneKey != "") {
+            PlatformerPaint.Blit(c, this.droneKey, 210, PlatformerLevel.GroundY - 38, 44, 38);
+        }
+        if (this.shardKey != "") {
+            PlatformerPaint.Blit(c, this.shardKey, 300, PlatformerLevel.GroundY - 42, 28, 36);
+        }
+        PlatformerPaint.TextCentered(c, "跃 迁 山 谷", w / 2, 74, w, 56, 0xFFF6D489);
+        PlatformerPaint.TextCentered(c, "PLATFORMER · 横版重力跳跃 · 三关通关",
+            w / 2, 136, w, 18, 0xFF9FB4C4);
+        // 存档统计（累计数据在菜单里能看见）。
+        string stat = "累计通关 " + Convert.ToString(shell.Clears())
+            + "   最远关卡 " + Convert.ToString(shell.Level())
+            + "   最佳单关 " + PlatformerView.Sec((float)shell.BestTime()) + "s"
+            + "   总分 " + Convert.ToString(shell.Score())
+            + "   局数 " + Convert.ToString(shell.Runs());
+        PlatformerPaint.TextCentered(c, stat, w / 2, 176, w, 17, 0xFFC8D8E8);
+        PlatformerPaint.TextCentered(c, "A/D 移动 · 空格跳跃（空中再按一次 = 二段跳）· 踩扁巡逻兵 · 踩到旗子过关",
+            w / 2, h - 70, w, 15, 0xFF8FA6B4);
+    }
+
+    // ---- 结算 ---------------------------------------------------------
+
+    public void DrawResult(Canvas c, PlatformerGame g, int w, int h, GameShell shell) {
+        PlatformerPaint.Fill(c, 0, 0, w, h, 0xC0080C16);
+        int px = w / 2 - 280;
+        int py = h / 2 - 190;
+        int pw = 560;
+        int ph = 380;
+        if (this.panelKey != "") {
+            PlatformerPaint.Blit(c, this.panelKey, px, py, pw, ph);
+        } else {
+            PlatformerPaint.FillRound(c, px, py, pw, ph, 12, 0xFF141C2C);
+            PlatformerPaint.Round(c, px, py, pw, ph, 12, 0xFF6C7C9A, 2);
+        }
+        bool won = g.clears >= PlatformerGame.LevelCount;
+        string title = won ? "全部通关！" : "本局结束";
+        PlatformerPaint.TextCentered(c, title, px + pw / 2, py + 22, pw, 32, 0xFFF2D98A);
+        PlatformerPaint.TextCentered(c, "通关到第 " + Convert.ToString(g.levelIndex + 1) + " 关 · 共 "
+            + Convert.ToString(g.clears) + " 关", px + pw / 2, py + 62, pw, 16, 0xFFE8E0CC);
+        int ty = py + 100;
+        string[] rows = new string[] {
+            "总用时 " + PlatformerView.Sec(g.totalTimeMs) + " 秒",
+            "晶片 " + Convert.ToString(g.coins) + " 枚    死亡 " + Convert.ToString(g.deaths) + " 次",
+            "本局得分 " + Convert.ToString(g.score),
+            "累计通关 " + Convert.ToString(shell.Clears()) + " 关    累计总分 " + Convert.ToString(shell.Score()),
+            "最远关卡 第 " + Convert.ToString(shell.Level()) + " 关    最佳单关 "
+                + PlatformerView.Sec((float)shell.BestTime()) + " 秒"
+        };
+        for (int i = 0; i < rows.Length; i = i + 1) {
+            PlatformerPaint.TextCentered(c, rows[i], px + pw / 2, ty, pw, 17, 0xFFBFCBD8);
+            ty = ty + 28;
+        }
+    }
+
+    // ---- 按钮 ---------------------------------------------------------
+
+    public void DrawButton(Canvas c, string label, int x, int y, int w, int h,
+                           bool hover, bool primary) {
+        int bg = primary ? 0xFF2F7FB8 : 0xFF27364E;
+        int edge = primary ? 0xFF6FB6E8 : 0xFF4A5D7C;
+        int text = 0xFFEAF2F8;
+        if (hover) {
+            bg = primary ? 0xFF3E9AD6 : 0xFF32455F;
+        }
+        PlatformerPaint.FillRound(c, x, y, w, h, 8, bg);
+        PlatformerPaint.Round(c, x, y, w, h, 8, edge, 2);
+        PlatformerPaint.TextCentered(c, label, x + w / 2, y + (h - 20) / 2, w, 19, text);
+    }
+}

@@ -13,15 +13,24 @@ param(
     # 透传给 zanc 的额外参数（如 --publish --target android-arm64 ...）
     [string[]]$ZancArgs = @()
 )
+
+# 找编译器：显式参数 → $env:ZANC → $env:ZAN_HOME → 包仓库自带的 build/
+# → 包仓库同级目录里的 zan-lang 兄弟仓库 → PATH 上的 zanc。
+. (Join-Path $PSScriptRoot 'zanc.ps1')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 $repo = Split-Path -Parent $project
-if (-not $Compiler) {
-    $local = if ($env:ZAN_HOME) { Join-Path $env:ZAN_HOME 'build/zanc.exe' } else { '' }
-    if ($local -and (Test-Path $local)) { $Compiler = $local } else { $Compiler = (Get-Command zanc -ErrorAction Stop).Source }
+if (-not $PackageProject) {
+    if ($env:ZAN_HOME) { $PackageProject = $env:ZAN_HOME }
+    else { throw '需要 -PackageProject 指向 zan-lang 仓库（公共包在它的 packages/ 下）' }
 }
-if (-not $Stdlib -and $env:ZAN_HOME) { $Stdlib = Join-Path $env:ZAN_HOME 'stdlib' }
-if (-not $PackageProject) { if ($env:ZAN_HOME) { $PackageProject = $env:ZAN_HOME } else { throw '需要 $env:ZAN_HOME 指向 zan-lang 仓库（公共包在它的 packages/ 下）' } }
+if (-not $Compiler) {
+    $Compiler = Resolve-ZanCompiler -PackageProject $PackageProject
+}
+if (-not $Stdlib) {
+    # 标准库不显式指定：--auto-stdlib 会按编译器位置自己找 ../stdlib。
+    $Stdlib = ''
+}
 if (-not $Output) { $Output = Join-Path $repo 'build/platformer' }
 $Output = [IO.Path]::GetFullPath($Output)
 New-Item -ItemType Directory -Force -Path $Output | Out-Null

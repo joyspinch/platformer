@@ -1,0 +1,172 @@
+using System;
+using System.Collections.Generic;
+
+// 玩家：横移（有加速度与摩擦）+ 重力跳跃 + 二段跳 + 与平台矩形碰撞。
+//
+// 坐标系：世界坐标，y 向下增大。落地判定是"脚底压到平台顶"，
+// 从上方落下会站住（不会穿过去）；侧面撞到平台会被推开。
+public class PlatformerPlayer {
+    public const int W = 36;
+    public const int H = 50;
+
+    public float x;
+    public float y;
+    public float vx;
+    public float vy;
+    public bool onGround;
+    public int jumpsLeft;      // 剩余可跳次数：落地重置为 2
+    public int hp;
+    public bool facingRight;
+    public float invuln;       // 无敌剩余秒（受伤后短暂免伤）
+    public bool jumped;        // 本帧起跳
+    public bool landed;        // 本帧落地
+    public bool hitWall;
+
+    // 物理参数（随难度档变化）。
+    public int gravity;
+    public int jumpSpeed;
+    public int moveAccel;
+    public int maxSpeed;
+    public int friction;
+
+    public PlatformerPlayer() {
+        this.gravity = 2000;
+        this.jumpSpeed = 760;
+        this.moveAccel = 1900;
+        this.maxSpeed = 330;
+        this.friction = 2500;
+        this.hp = 3;
+        this.jumpsLeft = 2;
+        this.facingRight = true;
+    }
+
+    // 难度档：1 轻松 / 2 标准 / 3 硬核。
+    public void ApplyDifficulty(int level) {
+        if (level <= 1) {
+            this.gravity = 1800;
+            this.jumpSpeed = 820;
+            this.moveAccel = 2100;
+            this.maxSpeed = 300;
+            this.friction = 2700;
+            return;
+        }
+        if (level >= 3) {
+            this.gravity = 2300;
+            this.jumpSpeed = 700;
+            this.moveAccel = 1700;
+            this.maxSpeed = 360;
+            this.friction = 2200;
+            return;
+        }
+        this.gravity = 2000;
+        this.jumpSpeed = 760;
+        this.moveAccel = 1900;
+        this.maxSpeed = 330;
+        this.friction = 2500;
+    }
+
+    // 重生到关卡起点。
+    public void Reset(PlatformerLevel lv) {
+        this.x = (float)lv.startX;
+        this.y = (float)lv.startY;
+        this.vx = 0.0f;
+        this.vy = 0.0f;
+        this.onGround = true;
+        this.jumpsLeft = 2;
+        this.hp = 3;
+        this.facingRight = true;
+        this.invuln = 0.0f;
+        this.jumped = false;
+        this.landed = false;
+        this.hitWall = false;
+    }
+
+    // 是否处于无敌状态。
+    public bool Invincible() { return this.invuln > 0.0f; }
+
+    // 一步物理。jumpEdge 是"本帧按下跳跃"的沿信号（按住不放不会连跳）。
+    public void Update(float dt, PlatformerLevel lv, bool left, bool right, bool jumpEdge) {
+        this.jumped = false;
+        this.landed = false;
+        this.hitWall = false;
+        bool wasGround = this.onGround;
+        if (this.invuln > 0.0f) { this.invuln = this.invuln - dt; }
+
+        // --- 水平：按住方向键加速，松手靠摩擦减速 ---
+        float dir = 0.0f;
+        if (left && !right) { dir = -1.0f; }
+        else if (right && !left) { dir = 1.0f; }
+        if (dir != 0.0f) {
+            this.vx = this.vx + dir * (float)this.moveAccel * dt;
+            this.facingRight = dir > 0.0f;
+        } else {
+            float f = (float)this.friction * dt;
+            if (this.vx > f) { this.vx = this.vx - f; }
+            else if (this.vx < -f) { this.vx = this.vx + f; }
+            else { this.vx = 0.0f; }
+        }
+        if (this.vx > (float)this.maxSpeed) { this.vx = (float)this.maxSpeed; }
+        if (this.vx < -(float)this.maxSpeed) { this.vx = -(float)this.maxSpeed; }
+
+        // --- 跳跃：地面跳 + 空中二段跳（落地重置次数）---
+        if (jumpEdge && this.jumpsLeft > 0) {
+            if (this.onGround) { this.vy = -(float)this.jumpSpeed; }
+            else { this.vy = -(float)this.jumpSpeed * 0.85f; }
+            this.jumpsLeft = this.jumpsLeft - 1;
+            this.onGround = false;
+            this.jumped = true;
+        }
+
+        // --- 重力与终端速度 ---
+        this.vy = this.vy + (float)this.gravity * dt;
+        if (this.vy > 1400.0f) { this.vy = 1400.0f; }
+
+        // --- 水平移动与侧向碰撞 ---
+        float prevTop = this.y;
+        float prevBottom = this.y + (float)PlatformerPlayer.H;
+        this.x = this.x + this.vx * dt;
+        for (int i = 0; i < lv.solids.Count; i = i + 1) {
+            PlatformerSolid s = lv.solids[i];
+            if (!this.Overlaps(s)) { continue; }
+            // 站在平台顶（脚底贴着面）或从下方掠过时不推 sideways。
+            if (prevBottom <= (float)s.y + 4.0f) { continue; }
+            if (prevTop >= (float)(s.y + s.h) - 4.0f) { continue; }
+            if (this.x + (float)PlatformerPlayer.W * 0.5f < (float)(s.x + s.w) * 0.5f) {
+                this.x = (float)(s.x - PlatformerPlayer.W);
+            } else {
+                this.x = (float)(s.x + s.w);
+            }
+            this.vx = 0.0f;
+            this.hitWall = true;
+        }
+        if (this.x < 0.0f) { this.x = 0.0f; this.vx = 0.0f; }
+
+        // --- 垂直移动与落地 ---
+        prevTop = this.y;
+        prevBottom = this.y + (float)PlatformerPlayer.H;
+        this.y = this.y + this.vy * dt;
+        this.onGround = false;
+        for (int i = 0; i < lv.solids.Count; i = i + 1) {
+            PlatformerSolid s = lv.solids[i];
+            if (!this.Overlaps(s)) { continue; }
+            if (this.vy >= 0.0f && prevBottom <= (float)s.y + 6.0f) {
+                // 从上方落下：站到平台顶。
+                this.y = (float)(s.y - PlatformerPlayer.H);
+                this.vy = 0.0f;
+                this.onGround = true;
+                if (!wasGround) { this.landed = true; }
+                this.jumpsLeft = 2;
+            } else if (this.vy < 0.0f && prevTop >= (float)(s.y + s.h) - 6.0f) {
+                // 顶到平台底：停一下。
+                this.y = (float)(s.y + s.h);
+                this.vy = 0.0f;
+            }
+        }
+    }
+
+    // 玩家矩形与平台矩形是否相交。
+    public bool Overlaps(PlatformerSolid s) {
+        return this.x < (float)(s.x + s.w) && this.x + (float)PlatformerPlayer.W > (float)s.x
+            && this.y < (float)(s.y + s.h) && this.y + (float)PlatformerPlayer.H > (float)s.y;
+    }
+}
