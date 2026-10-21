@@ -96,7 +96,7 @@
 ## 编译
 
 ```powershell
-pwsh -File client/tools/build.ps1 -PackageProject D:/project/zan-head
+pwsh -File client/tools/build.ps1 -PackageProject D:/project/zan-lang
 ```
 
 - `-PackageProject` 指向 **zan-lang 仓库**（公共包 `Zan.Game` / `Zan.Gui` 在它的 `packages/` 下）。
@@ -107,7 +107,7 @@ pwsh -File client/tools/build.ps1 -PackageProject D:/project/zan-head
 ## 测试
 
 ```powershell
-pwsh -File client/tools/test.ps1 -PackageProject D:/project/zan-head
+pwsh -File client/tools/test.ps1 -PackageProject D:/project/zan-lang
 ```
 
 三段全绿才算过：
