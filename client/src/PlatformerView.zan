@@ -105,7 +105,7 @@ public class PlatformerView {
         int destH = PlatformerView.DesignW * sh / sw;
         int y = destY;
         if (y < 0) { y = PlatformerLevel.GroundY - destH; }
-        PlatformerPaint.BlitSrc(c, key, 0, y, PlatformerView.DesignW, destH, sx, 0, sw, sh);
+        CDraw.BlitImageSrcKey(c, key, 0, y, PlatformerView.DesignW, destH, sx, 0, sw, sh);
     }
 
     // ---- 游戏画面 -----------------------------------------------------
@@ -129,7 +129,7 @@ public class PlatformerView {
             PlatformerPaint.Fill(c, sx, s.y + 8, s.w, 6, PlatformerPalette.RockEdge);
             if (this.tileKey != "") {
                 for (int tx = 0; tx < s.w; tx = tx + 64) {
-                    PlatformerPaint.Blit(c, this.tileKey, sx + tx, s.y, 64, 64);
+                    CDraw.BlitKey(c, this.tileKey, sx + tx, s.y, 64, 64);
                 }
             }
         }
@@ -137,7 +137,7 @@ public class PlatformerView {
         int flagX = g.level.exitX - cam - 20;
         if (flagX > -60 && flagX < w + 60) {
             if (this.flagKey != "") {
-                PlatformerPaint.Blit(c, this.flagKey, flagX, PlatformerLevel.GroundY - 64, 40, 64);
+                CDraw.BlitKey(c, this.flagKey, flagX, PlatformerLevel.GroundY - 64, 40, 64);
             } else {
                 PlatformerPaint.Fill(c, flagX + 18, PlatformerLevel.GroundY - 64, 4, 64, PlatformerPalette.Amber);
                 PlatformerPaint.Fill(c, flagX + 20, PlatformerLevel.GroundY - 60, 26, 18, PlatformerPalette.AmberDeep);
@@ -151,7 +151,7 @@ public class PlatformerView {
             if (sx < -40 || sx > w + 40) { continue; }
             PlatformerPaint.FillCircle(c, sx + 14, (int)s.y + 18, 14, PlatformerPalette.CrystalGlow);
             if (this.shardKey != "") {
-                PlatformerPaint.Blit(c, this.shardKey, sx, (int)s.y, 28, 36);
+                CDraw.BlitKey(c, this.shardKey, sx, (int)s.y, 28, 36);
             } else {
                 PlatformerPaint.FillRound(c, sx + 7, (int)s.y + 4, 14, 28, 5, PlatformerPalette.Moss);
             }
@@ -165,7 +165,7 @@ public class PlatformerView {
             this.DrawShadow(c, g, e.x + (float)PlatformerEnemy.W * 0.5f,
                 e.y + (float)PlatformerEnemy.H, 36);
             if (this.droneKey != "") {
-                PlatformerPaint.BlitSrc(c, this.droneKey, sx, (int)e.y,
+                CDraw.BlitImageSrcKey(c, this.droneKey, sx, (int)e.y,
                     PlatformerEnemy.W, PlatformerEnemy.H,
                     PlatformerFacing.DroneSrcX(e.facingRight), 0,
                     PlatformerFacing.DroneFrameW, PlatformerFacing.DroneFrameH);
@@ -184,14 +184,14 @@ public class PlatformerView {
             if (this.glowKey != "") {
                 int gw = PlatformerPlayer.W + 26;
                 int gh = PlatformerPlayer.H + 26;
-                PlatformerPaint.Blit(c, this.glowKey,
+                CDraw.BlitKey(c, this.glowKey,
                     px + PlatformerPlayer.W / 2 - gw / 2,
                     (int)p.y + PlatformerPlayer.H / 2 - gh / 2, gw, gh);
             }
             this.DrawShadow(c, g, p.x + (float)PlatformerPlayer.W * 0.5f,
                 p.y + (float)PlatformerPlayer.H, 44);
             if (this.playerKey != "") {
-                PlatformerPaint.BlitSrc(c, this.playerKey, px, (int)p.y,
+                CDraw.BlitImageSrcKey(c, this.playerKey, px, (int)p.y,
                     PlatformerPlayer.W, PlatformerPlayer.H,
                     PlatformerFacing.PlayerSrcX(p.facingRight), 0,
                     PlatformerFacing.PlayerFrameW, PlatformerFacing.PlayerFrameH);
@@ -211,7 +211,7 @@ public class PlatformerView {
         if (this.flareKey == "") { return; }
         int cy = y + PlatformerEnemy.H / 2;
         int fx = facingRight ? x - 8 : x + PlatformerEnemy.W + 8;
-        PlatformerPaint.Blit(c, this.flareKey, fx - 14, cy - 7, 28, 12);
+        CDraw.BlitKey(c, this.flareKey, fx - 14, cy - 7, 28, 12);
     }
 
     // 落地投影：软椭圆贴在脚下；腾空时贴在下方地形顶面并随高度缩小。
@@ -231,7 +231,7 @@ public class PlatformerView {
         int sh = sw / 4;
         // 影子整体压在地面线之下一点：上半截会被近景灌木吃掉，
         // 压低一点才有"踩在地上"的实感。
-        PlatformerPaint.Blit(c, this.shadowKey, (int)cx - sw / 2, sy - sh / 2 + 3, sw, sh);
+        CDraw.BlitKey(c, this.shadowKey, (int)cx - sw / 2, sy - sh / 2 + 3, sw, sh);
     }
 
     // (x, feetY) 下方最近的地形顶面（没有则返回 -1）。
@@ -250,7 +250,7 @@ public class PlatformerView {
     void DrawHud(Canvas c, PlatformerGame g, int w, int h) {
         // 左上角面板：美术底板（九宫格），没有底板才退回纯色圆角矩形。
         if (this.boardKey != "") {
-            PlatformerPaint.NineSlice(c, this.boardKey, PlatformerView.HudX,
+            CKitSlice.NineSliceKey(c, this.boardKey, PlatformerView.HudX,
                 PlatformerView.HudY, PlatformerView.HudW, PlatformerView.HudH,
                 PlatformerView.BoardCorner);
         } else {
@@ -259,29 +259,29 @@ public class PlatformerView {
             PlatformerPaint.Round(c, PlatformerView.HudX, PlatformerView.HudY,
                 PlatformerView.HudW, PlatformerView.HudH, 10, PlatformerPalette.PanelEdge, 2);
         }
-        PlatformerPaint.Text(c, "第 " + Convert.ToString(g.levelIndex + 1) + " 关 · " + g.level.name,
+        CText.DrawPx(c, "第 " + Convert.ToString(g.levelIndex + 1) + " 关 · " + g.level.name,
             30, 18, 20, PlatformerPalette.Amber);
-        PlatformerPaint.Text(c, "生命", 30, 50, 15, PlatformerPalette.Slate);
+        CText.DrawPx(c, "生命", 30, 50, 15, PlatformerPalette.Slate);
         for (int i = 0; i < g.lives; i = i + 1) {
             PlatformerPaint.FillRound(c, 74 + i * 24, 48, 18, 18, 5, PlatformerPalette.Danger);
             PlatformerPaint.FillRound(c, 79 + i * 24, 53, 8, 8, 3, PlatformerPalette.DangerSoft);
         }
-        PlatformerPaint.Text(c, "晶片 " + Convert.ToString(g.coins), 160, 50, 15, PlatformerPalette.Moss);
-        PlatformerPaint.Text(c, "用时 " + PlatformerView.Sec(g.totalTimeMs) + "s", 250, 50, 15, PlatformerPalette.Slate);
-        PlatformerPaint.Text(c, "分数 " + Convert.ToString(g.score), 344, 50, 15, PlatformerPalette.Amber);
+        CText.DrawPx(c, "晶片 " + Convert.ToString(g.coins), 160, 50, 15, PlatformerPalette.Moss);
+        CText.DrawPx(c, "用时 " + PlatformerView.Sec(g.totalTimeMs) + "s", 250, 50, 15, PlatformerPalette.Slate);
+        CText.DrawPx(c, "分数 " + Convert.ToString(g.score), 344, 50, 15, PlatformerPalette.Amber);
 
         // 底部提示条：同一块美术底板 + 弱色文字。
         string hint = "A/D 移动 · 空格跳（空中再按一次 = 二段跳）· Esc 设置";
-        int bw = PlatformerPaint.Measure(c, hint, 14) + 32;
+        int bw = CText.WidthPx(hint, 14) + 32;
         int by = h - PlatformerView.HintH - 10;
         if (this.boardKey != "") {
-            PlatformerPaint.NineSlice(c, this.boardKey, PlatformerView.HudX, by, bw,
+            CKitSlice.NineSliceKey(c, this.boardKey, PlatformerView.HudX, by, bw,
                 PlatformerView.HintH, PlatformerView.BoardCorner);
         } else {
             PlatformerPaint.FillRound(c, PlatformerView.HudX, by, bw, PlatformerView.HintH, 8,
                 PlatformerPalette.PanelFill);
         }
-        PlatformerPaint.Text(c, hint, PlatformerView.HudX + 16, by + 10, 14, PlatformerPalette.Mist);
+        CText.DrawPx(c, hint, PlatformerView.HudX + 16, by + 10, 14, PlatformerPalette.Mist);
     }
 
     // 秒数格式化（毫秒 → "12.3"）。
@@ -303,32 +303,30 @@ public class PlatformerView {
             PlatformerPalette.Abyss);
         // 舞台上摆三个位图主角（菜单也看得见美术）：朝向帧取"朝右"那一帧。
         if (this.playerKey != "") {
-            PlatformerPaint.BlitSrc(c, this.playerKey, 120, PlatformerLevel.GroundY - 50,
+            CDraw.BlitImageSrcKey(c, this.playerKey, 120, PlatformerLevel.GroundY - 50,
                 PlatformerPlayer.W, PlatformerPlayer.H,
                 PlatformerFacing.PlayerSrcX(true), 0,
                 PlatformerFacing.PlayerFrameW, PlatformerFacing.PlayerFrameH);
         }
         if (this.droneKey != "") {
-            PlatformerPaint.BlitSrc(c, this.droneKey, 210, PlatformerLevel.GroundY - 38,
+            CDraw.BlitImageSrcKey(c, this.droneKey, 210, PlatformerLevel.GroundY - 38,
                 PlatformerEnemy.W, PlatformerEnemy.H,
                 PlatformerFacing.DroneSrcX(true), 0,
                 PlatformerFacing.DroneFrameW, PlatformerFacing.DroneFrameH);
         }
         if (this.shardKey != "") {
-            PlatformerPaint.Blit(c, this.shardKey, 300, PlatformerLevel.GroundY - 42, 28, 36);
+            CDraw.BlitKey(c, this.shardKey, 300, PlatformerLevel.GroundY - 42, 28, 36);
         }
-        PlatformerPaint.TextCentered(c, "跃 迁 山 谷", w / 2, 74, w, 56, PlatformerPalette.Amber);
-        PlatformerPaint.TextCentered(c, "PLATFORMER · 横版重力跳跃 · 三关通关",
-            w / 2, 136, w, 18, PlatformerPalette.Slate);
+        CText.DrawCenteredPx(c, "跃 迁 山 谷", w / 2, 74, 56, PlatformerPalette.Amber);
+        CText.DrawCenteredPx(c, "PLATFORMER · 横版重力跳跃 · 三关通关", w / 2, 136, 18, PlatformerPalette.Slate);
         // 存档统计（累计数据在菜单里能看见）。
         string stat = "累计通关 " + Convert.ToString(shell.Clears())
             + "   最远关卡 " + Convert.ToString(shell.Level())
             + "   最佳单关 " + PlatformerView.Sec((float)shell.BestTime()) + "s"
             + "   总分 " + Convert.ToString(shell.Score())
             + "   局数 " + Convert.ToString(shell.Runs());
-        PlatformerPaint.TextCentered(c, stat, w / 2, 176, w, 17, PlatformerPalette.Parchment);
-        PlatformerPaint.TextCentered(c, "A/D 移动 · 空格跳跃（空中再按一次 = 二段跳）· 踩扁巡逻兵 · 踩到旗子过关",
-            w / 2, h - 70, w, 15, PlatformerPalette.Mist);
+        CText.DrawCenteredPx(c, stat, w / 2, 176, 17, PlatformerPalette.Parchment);
+        CText.DrawCenteredPx(c, "A/D 移动 · 空格跳跃（空中再按一次 = 二段跳）· 踩扁巡逻兵 · 踩到旗子过关", w / 2, h - 70, 15, PlatformerPalette.Mist);
     }
 
     // ---- 结算 ---------------------------------------------------------
@@ -340,7 +338,7 @@ public class PlatformerView {
         int pw = 560;
         int ph = 380;
         if (this.boardKey != "") {
-            PlatformerPaint.NineSlice(c, this.boardKey, px, py, pw, ph,
+            CKitSlice.NineSliceKey(c, this.boardKey, px, py, pw, ph,
                 PlatformerView.BoardCorner);
         } else {
             PlatformerPaint.FillRound(c, px, py, pw, ph, 12, PlatformerPalette.PanelFill);
@@ -348,9 +346,9 @@ public class PlatformerView {
         }
         bool won = g.clears >= PlatformerGame.LevelCount;
         string title = won ? "全部通关！" : "本局结束";
-        PlatformerPaint.TextCentered(c, title, px + pw / 2, py + 22, pw, 32, PlatformerPalette.Amber);
-        PlatformerPaint.TextCentered(c, "通关到第 " + Convert.ToString(g.levelIndex + 1) + " 关 · 共 "
-            + Convert.ToString(g.clears) + " 关", px + pw / 2, py + 62, pw, 16, PlatformerPalette.Parchment);
+        CText.DrawCenteredPx(c, title, px + pw / 2, py + 22, 32, PlatformerPalette.Amber);
+        CText.DrawCenteredPx(c, "通关到第 " + Convert.ToString(g.levelIndex + 1) + " 关 · 共 "
+            + Convert.ToString(g.clears) + " 关", px + pw / 2, py + 62, 16, PlatformerPalette.Parchment);
         int ty = py + 100;
         string[] rows = new string[] {
             "总用时 " + PlatformerView.Sec(g.totalTimeMs) + " 秒",
@@ -361,7 +359,7 @@ public class PlatformerView {
                 + PlatformerView.Sec((float)shell.BestTime()) + " 秒"
         };
         for (int i = 0; i < rows.Length; i = i + 1) {
-            PlatformerPaint.TextCentered(c, rows[i], px + pw / 2, ty, pw, 17, PlatformerPalette.Slate);
+            CText.DrawCenteredPx(c, rows[i], px + pw / 2, ty, 17, PlatformerPalette.Slate);
             ty = ty + 28;
         }
     }
@@ -377,7 +375,7 @@ public class PlatformerView {
         else { key = this.buttonKey; }
         int text = primary ? PlatformerPalette.TextInk : PlatformerPalette.ButtonText;
         if (key != "") {
-            PlatformerPaint.NineSlice(c, key, x, y, w, h, PlatformerView.ButtonCorner);
+            CKitSlice.NineSliceKey(c, key, x, y, w, h, PlatformerView.ButtonCorner);
         } else {
             // 没有美术底板时的兜底：纯色圆角矩形。
             int bg = primary ? PlatformerPalette.ButtonPrimary : PlatformerPalette.ButtonFace;
@@ -390,6 +388,6 @@ public class PlatformerView {
         if (hover && primary) {
             PlatformerPaint.Round(c, x, y, w, h, 8, PlatformerPalette.AmberGlow, 2);
         }
-        PlatformerPaint.TextCentered(c, label, x + w / 2, y + (h - 20) / 2, w, 19, text);
+        CText.DrawCenteredPx(c, label, x + w / 2, y + (h - 20) / 2, 19, text);
     }
 }

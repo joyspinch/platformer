@@ -4,6 +4,14 @@ using Game.Kit;
 
 // 逻辑坐标下的画布原语：把 CDraw 的视口映射包一层，
 // 让全部布局写在设计分辨率（1280×720）的逻辑像素里。
+//
+// 通用绘制原语**不再在这里实现**——九宫格切图归 Game.Kit.CKitSlice、
+// 裁源贴图归 Game.Kit.CDraw.BlitImageSrcKey、整幅贴图归 CDraw.BlitKey、
+// 文字（普通/居中/量宽）归 Game.Kit.CText。同一件事此前在 8 个游戏项目
+// 各写一份，签名漂成 8 种。
+//
+// 本文件剩下的是**形状**原语：引擎的 Canvas 只提供最底层画法，这里按逻辑
+// 坐标包一层。
 public class PlatformerPaint {
     public static int X(int v) { return CDraw.MapX(v + CDraw.originX); }
     public static int Y(int v) { return CDraw.MapY(v + CDraw.originY); }
@@ -37,74 +45,5 @@ public class PlatformerPaint {
     public static void Circle(Canvas c, int cx, int cy, int r, int color, int t) {
         if (r <= 0 || t <= 0) { return; }
         c.DrawCircle(X(cx), Y(cy), S(r), color, S(t));
-    }
-
-    public static void Text(Canvas c, string text, int x, int y, int size, int color) {
-        c.DrawText(X(x), Y(y), text, color, S(size));
-    }
-
-    public static void TextCentered(Canvas c, string text, int cx, int y, int boxW, int size, int color) {
-        int tw = c.MeasureText(text, S(size));
-        c.DrawText(X(cx - tw / 2), Y(y), text, color, S(size));
-    }
-
-    // 整幅贴图缩放绘制（磁盘路径或内嵌 mem: 键都行）。
-    public static void Blit(Canvas c, string key, int x, int y, int w, int h) {
-        if (key == null || key == "") { return; }
-        c.BlitImage(key, X(x), Y(y), S(w), S(h), 0, 0, 0, 0);
-    }
-
-    // 裁源矩形贴图：视差背景靠它取景（不靠平移两张拼接，免得有竖缝）；
-    // 朝向精灵表也靠它取帧。
-    public static void BlitSrc(Canvas c, string key, int x, int y, int w, int h,
-                               int sx, int sy, int sw, int sh) {
-        if (key == null || key == "") { return; }
-        if (w <= 0 || h <= 0) { return; }
-        if (sw <= 0 || sh <= 0) { return; }
-        c.BlitImage(key, X(x), Y(y), S(w), S(h), sx, sy, sw, sh);
-    }
-
-    // 九宫格贴图：把源图切成 9 块拼到目标矩形
-    // （四角原样、上下左右边拉伸、中间平铺）。
-    //
-    // 引擎没有 border-image，CSS 也没有九宫格，所以底板只能自己切。
-    // corner 是角切片的边长（**源图像素**）：所有圆弧与装饰都必须落在角
-    // 切片内，否则拉伸时会被拉变形。
-    public static void NineSlice(Canvas c, string key, int x, int y, int w, int h,
-                                  int corner) {
-        if (key == null || key == "") { return; }
-        if (w <= 0 || h <= 0) { return; }
-        int iw = Canvas.ImageWidth(key);
-        int ih = Canvas.ImageHeight(key);
-        if (iw <= 0 || ih <= 0) { return; }
-        int cnr = corner;
-        if (cnr > iw / 2) { cnr = iw / 2; }
-        if (cnr > ih / 2) { cnr = ih / 2; }
-        if (cnr > w / 2) { cnr = w / 2; }
-        if (cnr > h / 2) { cnr = h / 2; }
-        if (cnr <= 0) { return; }
-        int mw = iw - cnr * 2;      // 源图中间列/行宽
-        int mh = ih - cnr * 2;
-        int dw = w - cnr * 2;      // 目标中间列/行宽
-        int dh = h - cnr * 2;
-        // 四角：原样贴。
-        PlatformerPaint.BlitSrc(c, key, x, y, cnr, cnr, 0, 0, cnr, cnr);
-        PlatformerPaint.BlitSrc(c, key, x + w - cnr, y, cnr, cnr, iw - cnr, 0, cnr, cnr);
-        PlatformerPaint.BlitSrc(c, key, x, y + h - cnr, cnr, cnr, 0, ih - cnr, cnr, cnr);
-        PlatformerPaint.BlitSrc(c, key, x + w - cnr, y + h - cnr, cnr, cnr,
-            iw - cnr, ih - cnr, cnr, cnr);
-        // 四边：横边横拉、竖边竖拉。
-        PlatformerPaint.BlitSrc(c, key, x + cnr, y, dw, cnr, cnr, 0, mw, cnr);
-        PlatformerPaint.BlitSrc(c, key, x + cnr, y + h - cnr, dw, cnr, cnr, ih - cnr, mw, cnr);
-        PlatformerPaint.BlitSrc(c, key, x, y + cnr, cnr, dh, 0, cnr, cnr, mh);
-        PlatformerPaint.BlitSrc(c, key, x + w - cnr, y + cnr, cnr, dh, iw - cnr, cnr, cnr, mh);
-        // 中间：整块拉伸（底板中间是纯色/渐变，拉伸不会变形）。
-        PlatformerPaint.BlitSrc(c, key, x + cnr, y + cnr, dw, dh, cnr, cnr, mw, mh);
-    }
-
-    // 量一段文字的像素宽（布局用）。
-    public static int Measure(Canvas c, string text, int size) {
-        if (text == null || text == "") { return 0; }
-        return c.MeasureText(text, S(size));
     }
 }
