@@ -96,7 +96,7 @@
 ## 编译
 
 ```powershell
-pwsh -File client/tools/build.ps1 -PackageProject D:/project/zan-lang
+pwsh -File client/tools/build.ps1 -PackageProject "$env:ZAN_HOME"
 ```
 
 - `-PackageProject` 指向 **zan-lang 仓库**（公共包 `Zan.Game` / `Zan.Gui` 在它的 `packages/` 下）。
@@ -107,7 +107,7 @@ pwsh -File client/tools/build.ps1 -PackageProject D:/project/zan-lang
 ## 测试
 
 ```powershell
-pwsh -File client/tools/test.ps1 -PackageProject D:/project/zan-lang
+pwsh -File client/tools/test.ps1 -PackageProject "$env:ZAN_HOME"
 ```
 
 三段全绿才算过：
@@ -128,7 +128,7 @@ pwsh -File client/tools/test.ps1 -PackageProject D:/project/zan-lang
 $out = 'build/platformer'
 $env:ZAN_UI_OUT = "$out/uidrv"
 $env:ZAN_UI_SCRIPT = 'client/tools/shot_face_right.script'   # 点「开始游戏」后按住 D
-python D:/project/zan-lang/scripts/shot_window.py `
+python "$env:ZAN_HOME/scripts/shot_window.py" `
   "$out/Platformer.exe" "$out/ui_face_right.png" 4.2 $out
 ```
 

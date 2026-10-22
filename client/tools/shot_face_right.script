@@ -4,7 +4,7 @@
 #   $out = 'build/platformer'
 #   $env:ZAN_UI_OUT = "$out/uidrv"
 #   $env:ZAN_UI_SCRIPT = 'client/tools/shot_face_right.script'
-#   python D:/project/zan-lang/scripts/shot_window.py `
+#   python "$env:ZAN_HOME/scripts/shot_window.py" `
 #     "$out/Platformer.exe" "$out/ui_face_right.png" 4.2 $out
 #
 # 脚本按 UiDriver 语法逐行注入合成输入：
